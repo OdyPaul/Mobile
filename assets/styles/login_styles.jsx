@@ -7,7 +7,7 @@ export const login_styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "flex-start", // move everything upward
     paddingHorizontal: s(20),
-    paddingTop: vs(60), // adds top space for clean offset
+    paddingTop: vs(80), // adds top space for clean offset
   },
   logoContainer: {
     alignItems: "center",

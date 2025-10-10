@@ -1,20 +1,67 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   StyleSheet,
+  Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { s, vs, ms } from "react-native-size-matters";
 import LoginLogo from "../../assets/images/login_logo";
 import { login_styles } from "../../assets/styles/login_styles";
+import { useDispatch, useSelector } from "react-redux";
+import { login, reset } from "../../features/auth/authSlice";
+import Toast from "react-native-toast-message";
+
 
 export default function Login() {
-  const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+
+  const dispatch = useDispatch();
+  const router = useRouter();
+
+  const { user, isError, isSuccess, message } = useSelector(
+    (state) => state.auth
+  );
+
+  // ✅ Handle Login
+  const handleLogin = () => {
+    if (!email || !password) {
+      Alert.alert("Error", "Please fill in all fields");
+      return;
+    }
+
+    const userData = { email, password };
+    dispatch(login(userData));
+  };
+
+  // ✅ Redirect or Show Error
+useEffect(() => {
+  if (isError) {
+    Toast.show({
+      type: "error",
+      text1: "Login Failed",
+      text2: message || "Invalid credentials",
+    });
+    dispatch(reset());
+  }
+
+  if (isSuccess || user) {
+    Toast.show({
+      type: "success",
+      text1: "Login Successful",
+      text2: "Redirecting to your dashboard...",
+    });
+    router.replace("/(main)/home");
+    dispatch(reset());
+  }
+}, [user, isError, isSuccess, message, dispatch]);
+
 
   return (
     <View style={login_styles.container}>
@@ -33,6 +80,9 @@ export default function Login() {
             style={login_styles.input}
             placeholderTextColor="#A0A0A0"
             keyboardType="email-address"
+            autoCapitalize="none"
+            value={email}
+            onChangeText={setEmail}
           />
         </View>
 
@@ -44,6 +94,8 @@ export default function Login() {
             secureTextEntry={!showPassword}
             style={login_styles.input}
             placeholderTextColor="#A0A0A0"
+            value={password}
+            onChangeText={setPassword}
           />
           <TouchableOpacity
             onPress={() => setShowPassword(!showPassword)}
@@ -58,7 +110,11 @@ export default function Login() {
         </View>
 
         {/* Login Button */}
-        <TouchableOpacity style={login_styles.loginButton}>
+        <TouchableOpacity
+          style={login_styles.loginButton}
+          onPress={handleLogin}
+          activeOpacity={0.8}
+        >
           <Text style={login_styles.loginText}>Login</Text>
         </TouchableOpacity>
 
@@ -76,4 +132,3 @@ export default function Login() {
     </View>
   );
 }
-
