@@ -1,61 +1,315 @@
-import React from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import React, { useState } from "react";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  SafeAreaView,
+  ScrollView,
+  Image,
+  Modal,
+} from "react-native";
 import { useDispatch } from "react-redux";
-import { logout } from "../../features/auth/authSlice"; // adjust path if needed
+import { logout } from "../../features/auth/authSlice";
 import { useRouter } from "expo-router";
 import Toast from "react-native-toast-message";
+import {
+  moderateScale,
+  scale,
+  verticalScale,
+} from "react-native-size-matters";
+import { Ionicons } from "@expo/vector-icons";
 
 export default function Settings() {
   const dispatch = useDispatch();
   const router = useRouter();
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
 
-const handleLogout = async () => {
-  await dispatch(logout());
-  Toast.show({
-    type: "success",
-    text1: "Logged Out",
-    text2: "You have been logged out successfully.",
-  });
-  router.replace("/(auth)/login");
-};
+  const handleLogout = async () => {
+    await dispatch(logout());
+    Toast.show({
+      type: "success",
+      text1: "Logged Out",
+      text2: "You have been logged out successfully.",
+    });
+    router.replace("/(auth)/login");
+  };
+
+  const menuItems = [
+    { title: "Wallet Address", icon: "wallet-outline" },
+    { title: "Change Password", icon: "lock-closed-outline" },
+    { title: "Set Up Biometrics", icon: "finger-print-outline" },
+    { title: "Terms of Service", icon: "document-text-outline" },
+    { title: "FAQs", icon: "help-circle-outline" },
+    {
+      title: "Log out",
+      icon: "log-out-outline",
+      action: () => setShowLogoutModal(true),
+    },
+  ];
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.text}>Settings Page</Text>
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView contentContainerStyle={styles.container}>
+        {/* Profile Card */}
+        <View style={styles.profileCard}>
+          <Image
+            source={{
+              uri: "https://cdn-icons-png.flaticon.com/512/4140/4140048.png",
+            }}
+            style={styles.avatar}
+          />
+          <View style={styles.profileInfo}>
+            <Text style={styles.userName}>John Doe</Text>
+            <Text style={styles.userEmail}>john@gmail.com</Text>
+            <Text style={styles.memberSince}>Member since 3/9/2025</Text>
+          </View>
+        </View>
 
-      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-        <Text style={styles.logoutText}>Logout</Text>
-      </TouchableOpacity>
-    </View>
+        {/* Edit Profile Button */}
+        <TouchableOpacity style={styles.editProfileButton}>
+          <Text style={styles.editProfileText}>Edit Profile</Text>
+        </TouchableOpacity>
+
+        {/* Menu Section */}
+        <View style={styles.menuSection}>
+          {menuItems.map((item, index) => (
+            <TouchableOpacity
+              key={index}
+              style={styles.menuItem}
+              onPress={item.action}
+            >
+              <View style={styles.menuLeft}>
+                <Ionicons
+                  name={item.icon}
+                  size={moderateScale(22)}
+                  color="#1E5128"
+                />
+                <Text style={styles.menuText}>{item.title}</Text>
+              </View>
+              <Ionicons
+                name="chevron-forward"
+                size={moderateScale(20)}
+                color="#888"
+              />
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Contact Section */}
+        <View style={styles.contactCard}>
+          <View>
+            <View style={styles.iconText}>
+              <Ionicons
+                name="mail-outline"
+                size={moderateScale(22)}
+                color="#1E5128"
+                style={{ marginRight: scale(8) }}
+              />
+              <Text style={styles.contactText}>Email us at:</Text>
+            </View>
+            <Text style={styles.contactEmail}>psau_aas@ikswela.psau.edu.ph</Text>
+          </View>
+        </View>
+      </ScrollView>
+
+      {/* Logout Confirmation Modal */}
+      <Modal
+        visible={showLogoutModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowLogoutModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalTitle}>Are you sure you want to logout?</Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setShowLogoutModal(false)}
+              >
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalButton, styles.confirmButton]}
+                onPress={() => {
+                  setShowLogoutModal(false);
+                  handleLogout();
+                }}
+              >
+                <Text style={styles.confirmText}>Confirm</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
+    backgroundColor: "#E8F5E9",
+  },
+  container: {
+    paddingHorizontal: scale(20),
+    paddingTop: verticalScale(50),
+    paddingBottom: verticalScale(40),
+  },
+  profileCard: {
     backgroundColor: "#fff",
-  },
-  text: {
-    fontSize: 20,
-    marginBottom: 20,
-    color: "#333",
-  },
-  logoutButton: {
-    backgroundColor: "#EF4444",
-    paddingVertical: 12,
-    paddingHorizontal: 30,
-    borderRadius: 25,
+    borderRadius: moderateScale(20),
+    flexDirection: "row",
+    alignItems: "center",
+    padding: scale(15),
     shadowColor: "#000",
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.05,
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 4,
-    elevation: 3,
+    elevation: 2,
   },
-  logoutText: {
+  avatar: {
+    width: moderateScale(60),
+    height: moderateScale(60),
+    borderRadius: moderateScale(30),
+    marginRight: scale(15),
+  },
+  profileInfo: {
+    flex: 1,
+  },
+  userName: {
+    fontSize: moderateScale(18),
+    fontWeight: "700",
+    color: "#1E5128",
+  },
+  userEmail: {
+    fontSize: moderateScale(14),
+    color: "#666",
+  },
+  memberSince: {
+    fontSize: moderateScale(12),
+    color: "#888",
+    marginTop: verticalScale(2),
+  },
+  editProfileButton: {
+    backgroundColor: "#1E5128",
+    borderRadius: moderateScale(25),
+    paddingVertical: verticalScale(10),
+    marginTop: verticalScale(15),
+    marginBottom: verticalScale(20),
+    alignItems: "center",
+  },
+  editProfileText: {
     color: "#fff",
-    fontSize: 16,
+    fontWeight: "600",
+    fontSize: moderateScale(15),
+  },
+  menuSection: {
+    backgroundColor: "#fff",
+    borderRadius: moderateScale(20),
+    paddingVertical: verticalScale(5),
+    paddingHorizontal: scale(10),
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  menuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: verticalScale(15),
+    paddingHorizontal: scale(5),
+  },
+  menuLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  menuText: {
+    fontSize: moderateScale(15),
+    color: "#222",
+    marginLeft: scale(10),
+    fontWeight: "500",
+  },
+  contactCard: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "white",
+    borderRadius: moderateScale(20),
+    paddingVertical: verticalScale(15),
+    marginTop: verticalScale(25),
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  iconText: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: verticalScale(4),
+  },
+  contactText: {
+    color: "#1E5128",
+    fontSize: moderateScale(14),
+    fontWeight: "500",
+  },
+  contactEmail: {
+    color: "#1E5128",
+    fontSize: moderateScale(14),
+    fontWeight: "700",
+    textAlign: "center",
+  },
+
+  // --- Modal Styles ---
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.3)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalContainer: {
+    backgroundColor: "#fff",
+    width: "80%",
+    borderRadius: moderateScale(15),
+    padding: verticalScale(20),
+    alignItems: "center",
+  },
+  modalTitle: {
+    fontSize: moderateScale(15),
+    color: "#1E5128",
+    textAlign: "center",
+    fontWeight: "600",
+    marginBottom: verticalScale(15),
+  },
+  modalButtons: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: "100%",
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: verticalScale(10),
+    borderRadius: moderateScale(10),
+    marginHorizontal: scale(5),
+    alignItems: "center",
+  },
+  cancelButton: {
+    backgroundColor: "#E0E0E0",
+  },
+  confirmButton: {
+    backgroundColor: "#1E5128",
+  },
+  cancelText: {
+    color: "#333",
+    fontWeight: "600",
+  },
+  confirmText: {
+    color: "#fff",
     fontWeight: "600",
   },
 });
