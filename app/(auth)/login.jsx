@@ -15,7 +15,7 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const dispatch = useDispatch();
   const router = useRouter();
-  console.log("Dispatch:", dispatch);
+
 
   const { user, isError, isSuccess, message } = useSelector((state) => state.auth);
 
