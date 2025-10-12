@@ -36,25 +36,33 @@ export default function Login() {
   };
 
   useEffect(() => {
-    if (isError) {
-      Toast.show({
-        type: "error",
-        text1: "Login Failed",
-        text2: message || "Invalid credentials",
-      });
-      dispatch(reset());
+  if (isError) {
+    Toast.show({
+      type: "error",
+      text1: "Login Failed",
+      text2: message || "Invalid credentials",
+    });
+    dispatch(reset());
+  }
+
+  if (isSuccess || user) {
+    Toast.show({
+      type: "success",
+      text1: "Login Successful",
+      text2: "Redirecting...",
+    });
+
+    // ✅ Check verification status
+    if (user?.verified === "unverified") {
+      router.replace("/(setup)/startSetup");
+    } else {
+      router.replace("/(main)/home");
     }
 
-    if (isSuccess || user) {
-      Toast.show({
-        type: "success",
-        text1: "Login Successful",
-        text2: "Redirecting to your dashboard...",
-      });
-      router.replace("/(main)/home");
-      dispatch(reset());
-    }
-  }, [user, isError, isSuccess, message, dispatch]);
+    dispatch(reset());
+  }
+}, [user, isError, isSuccess, message, dispatch]);
+
 
   return (
     <View style={login_styles.container}>

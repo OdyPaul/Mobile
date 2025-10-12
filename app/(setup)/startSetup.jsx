@@ -27,7 +27,7 @@ export default function StartSetup() {
       </TouchableOpacity>
 
       {/* Skip Button */}
-      <TouchableOpacity onPress={() => router.back()}>
+      <TouchableOpacity onPress={() => router.replace("/(main)/home")}>
         <Text style={styles.skipText}>Skip</Text>
       </TouchableOpacity>
     </View>
