@@ -14,6 +14,7 @@ export default function RootLayout() {
             <Stack.Screen name="onboarding" />
             <Stack.Screen name="(auth)" />
             <Stack.Screen name="(main)" />
+            <Stack.Screen name="(setup)" />
           </Stack>
           <Toast config={toastConfig}/>
         </SafeAreaProvider>
