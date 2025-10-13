@@ -1,87 +1,93 @@
 import "react-native-get-random-values";
 import React, { useState, useEffect } from "react";
-import { Ionicons } from "@expo/vector-icons";
 import {
   View,
   Text,
   Button,
   StyleSheet,
-  Alert,
   TouchableOpacity,
   ActivityIndicator,
-  LogBox,
+  Alert,
 } from "react-native";
-import { WalletConnectModal, useWalletConnectModal } from "@walletconnect/modal-react-native";
+import { Ionicons } from "@expo/vector-icons";
+import {
+  WalletConnectModal,
+  useWalletConnectModal,
+} from "@walletconnect/modal-react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useDispatch, useSelector } from "react-redux";
-import { updateUserDID, updateUser } from "../../features/wallet/didSlice";
+import { updateDID } from "../../features/auth/authSlice";
 import { useRouter } from "expo-router";
-LogBox.ignoreLogs([
-  "setLayoutAnimationEnabledExperimental",
-  "SafeAreaView has been deprecated",
-  "Falling back to file-based resolution",
-  "WebSocket connection closed",
-]);
 
 const projectId = "2909466446bb37af0f229b405872de47";
 
 const providerMetadata = {
-  name: "VcWalletApp",
+  name: "WalletMobile",
   description: "DID connection for verification",
   url: "https://example.com",
   icons: ["https://walletconnect.com/walletconnect-logo.png"],
-  redirect: { native: "vcwalletapp://" },
+  redirect: { native: "mobile://" },
 };
 
-export default function ConnectWalletScreen({ navigation }) {
-      const router = useRouter();
-  const walletConnect = useWalletConnectModal({
+export default function ConnectWalletScreen() {
+  const router = useRouter();
+  const dispatch = useDispatch();
+  const user = useSelector((state) => state.auth.user);
+
+  const { open, close, isConnected, address, provider } = useWalletConnectModal({
     projectId,
     providerMetadata,
   });
 
-  const { open, close, isConnected, address, provider } = walletConnect;
-
   const [loading, setLoading] = useState(false);
-  const dispatch = useDispatch();
-  const user = useSelector((state) => state.auth.user);
+  const [savedAddress, setSavedAddress] = useState(null);
 
+  // ✅ Load existing saved wallet
   useEffect(() => {
-    if (isConnected && address && user?.did) {
-      navigation.replace("Settings");
-    }
-  }, [isConnected, address, user]);
+    const loadWallet = async () => {
+      const stored = await AsyncStorage.getItem("walletSession");
+      if (stored) {
+        const { address } = JSON.parse(stored);
+        setSavedAddress(address);
+      }
+    };
+    loadWallet();
+  }, []);
 
-  const handleSave = async () => {
+  // ✅ Save wallet address to local storage only when it’s rendered
+  useEffect(() => {
+    const saveIfConnected = async () => {
+      if (isConnected && address) {
+        await AsyncStorage.setItem("walletSession", JSON.stringify({ address }));
+        setSavedAddress(address);
+
+        // update DID if not linked yet
+        if (!user?.did) {
+          try {
+            await dispatch(updateDID(address)).unwrap();
+          } catch (err) {
+            console.error("DID update failed:", err);
+          }
+        }
+      }
+    };
+    saveIfConnected();
+  }, [isConnected, address]);
+
+  const connectWallet = async () => {
     try {
       setLoading(true);
-      const token = user?.token;
-      if (!token) return Alert.alert("Missing token. Please log in again.");
-
-      const updatedUser = await dispatch(
-        updateUserDID({
-          userId: user._id,
-          walletAddress: address,
-          token,
-        })
-      ).unwrap();
-
-      dispatch(updateUser(updatedUser));
-
-      Alert.alert("✅ Wallet Linked", "Your wallet has been connected.", [
-        {
-          text: "OK",
-          onPress: () => navigation.navigate("Settings", { triggerVerify: true }),
-        },
-      ]);
+      await new Promise((resolve) => setTimeout(resolve, 200)); // ensure modal mounts
+      await open();
     } catch (err) {
-      console.error("❌ DID Update Error:", err);
-      Alert.alert("Error", err.message || "Failed to save wallet.");
+      console.error("Wallet connect failed:", err);
+      Alert.alert("Error", "Failed to connect wallet. Please try again.");
     } finally {
       setLoading(false);
     }
   };
-
-  const handleDisconnect = async () => {
+//works
+  const disconnectWallet = async () => {
     Alert.alert("Disconnect Wallet", "Are you sure you want to unlink your wallet?", [
       { text: "Cancel", style: "cancel" },
       {
@@ -89,26 +95,15 @@ export default function ConnectWalletScreen({ navigation }) {
         onPress: async () => {
           try {
             setLoading(true);
-            const token = user?.token;
-            if (!token) return Alert.alert("Missing token. Please log in again.");
+            await AsyncStorage.removeItem("walletSession");
+            setSavedAddress(null);
+            await dispatch(updateDID(null)).unwrap();
+            if (provider?.disconnect) await provider.disconnect();
+            await close();
 
-            const updatedUser = await dispatch(
-              updateUserDID({
-                userId: user._id,
-                walletAddress: null,
-                token,
-              })
-            ).unwrap();
-
-            dispatch(updateUser(updatedUser));
-
-            await safeDisconnect(provider, close);
-
-            setTimeout(() => {
-              Alert.alert("✅ Wallet Disconnected", "Your wallet has been unlinked.", [
-                { text: "OK", onPress: () => navigation.navigate("Settings") },
-              ]);
-            }, 600);
+            Alert.alert("✅ Wallet Disconnected", "Your wallet has been unlinked.", [
+              { text: "OK", onPress: () => router.push("/(main)/settings") },
+            ]);
           } catch (err) {
             console.error("❌ Disconnect Error:", err);
             Alert.alert("Error", err.message || "Failed to disconnect wallet.");
@@ -120,58 +115,29 @@ export default function ConnectWalletScreen({ navigation }) {
     ]);
   };
 
-  const safeDisconnect = async (provider, close) => {
-    try {
-      if (provider?.disconnect) {
-        await provider.disconnect();
-      }
-    } catch (err) {
-      console.warn("⚠️ WalletConnect provider disconnect failed:", err.message);
-    } finally {
-      try {
-        await close();
-      } catch {}
-    }
-  };
-
-  const handleConnect = async () => {
-    try {
-      setLoading(true);
-      await open();
-
-      setTimeout(() => {
-        if (isConnected && address) {
-          handleSave();
-        }
-      }, 1000);
-    } catch (err) {
-      console.error("Wallet connect failed:", err);
-      Alert.alert("Error", "Failed to open wallet connect modal.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <View style={styles.container}>
-      <TouchableOpacity style={styles.backButton} onPress={() => router.push("/(main)/settings")}>
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={() => router.push("/(main)/settings")}
+      >
         <Ionicons name="arrow-back" size={24} color="#000" />
         <Text style={styles.backText}>Back to Settings</Text>
       </TouchableOpacity>
 
-      <Text style={styles.title}>Connect Your Wallet</Text>
+      <Text style={styles.title}>Connect Your MetaMask Wallet</Text>
 
       {loading ? (
         <ActivityIndicator size="large" color="#007bff" />
-      ) : isConnected ? (
+      ) : savedAddress ? (
         <>
           <Text style={styles.addr}>Connected Address:</Text>
-          <Text style={styles.addressValue}>{address}</Text>
+          <Text style={styles.addressValue}>{savedAddress}</Text>
           <View style={{ height: 10 }} />
-          <Button title="Disconnect Wallet" color="red" onPress={handleDisconnect} />
+          <Button title="Disconnect Wallet" color="red" onPress={disconnectWallet} />
         </>
       ) : (
-        <Button title="Connect Wallet" onPress={handleConnect} />
+        <Button title="Connect Wallet" onPress={connectWallet} />
       )}
 
       <WalletConnectModal projectId={projectId} providerMetadata={providerMetadata} />
