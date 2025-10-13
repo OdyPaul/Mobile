@@ -7,7 +7,7 @@ import {
   StyleSheet,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { useRoute } from "@react-navigation/native";
+import { useLocalSearchParams } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { Picker } from "@react-native-picker/picker";
 import { s, vs } from "react-native-size-matters";
@@ -16,15 +16,10 @@ const PRIMARY_GREEN = "#28a745";
 
 export default function ValidId() {
   const router = useRouter();
-  const route = useRoute();
 
-  const personal = route.params?.personal
-    ? JSON.parse(route.params.personal)
-    : {};
-  const education = route.params?.education
-    ? JSON.parse(route.params.education)
-    : {};
-  const selfieUri = route.params?.selfieUri || null;
+const { personal, education, selfieUri } = useLocalSearchParams();
+const personalData = personal ? JSON.parse(personal) : {};
+const educationData = education ? JSON.parse(education) : {};
 
   const [permission, requestPermission] = useCameraPermissions();
   const [idType, setIdType] = useState("");
@@ -144,11 +139,11 @@ export default function ValidId() {
             router.push({
               pathname: "/confirm",
               params: {
-                personal: JSON.stringify(personal),
-                education: JSON.stringify(education),
-                selfieUri,
-                idUri,
-                idType,
+              personal: JSON.stringify(personalData),
+              education: JSON.stringify(educationData),
+              selfieUri,
+              idUri,
+              idType,
               },
             })
             }

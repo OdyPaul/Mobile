@@ -1,7 +1,5 @@
-// features/verification/verificationSlice.js
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import axios from "axios";
-const API_URL = process.env.EXPO_PUBLIC_API_URL;
+import verificationService from ".././verification/verificationService";
 
 const initialState = {
   request: null,
@@ -15,22 +13,9 @@ export const createVerificationRequest = createAsyncThunk(
   "verification/create",
   async (data, thunkAPI) => {
     try {
-      // ✅ Grab token from Redux auth slice
-      const token = thunkAPI.getState().auth.user?.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-
-      // ✅ Send to backend
-      const response = await axios.post(
-        `${API_URL}/api/verification-request`,
-        data,
-        config
-      );
-
-      return response.data;
+      return await verificationService.createVerificationRequest(data);
     } catch (error) {
-      return thunkAPI.rejectWithValue(
-        error.response?.data?.message || error.message || "Something went wrong"
-      );
+      return thunkAPI.rejectWithValue(error.message);
     }
   }
 );

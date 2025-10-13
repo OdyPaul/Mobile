@@ -1,17 +1,18 @@
 import React, { useState, useRef } from "react";
 import { View, Text, TouchableOpacity, Image, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
-import { useRoute } from "@react-navigation/native";
+import { useLocalSearchParams } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
 
 const PRIMARY_GREEN = "#28a745";
 
 export default function Selfie() {
   const router = useRouter();
-  const route = useRoute();
+  
 
-  const personal = route.params?.personal ? JSON.parse(route.params.personal) : {};
-  const education = route.params?.education ? JSON.parse(route.params.education) : {};
+const { personal, education } = useLocalSearchParams();
+const personalData = personal ? JSON.parse(personal) : {};
+const educationData = education ? JSON.parse(education) : {};
 
   const [permission, requestPermission] = useCameraPermissions();
   const [photoUri, setPhotoUri] = useState(null);
@@ -87,9 +88,9 @@ export default function Selfie() {
               router.push({
                 pathname: "/valid_id",
                 params: {
-                  personal: JSON.stringify(personal),
-                  education: JSON.stringify(education),
-                  selfieUri: photoUri,
+                personal: JSON.stringify(personalData),
+                education: JSON.stringify(educationData),
+                selfieUri: photoUri,
                 },
               })
             }

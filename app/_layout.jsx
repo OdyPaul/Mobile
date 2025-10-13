@@ -15,6 +15,8 @@ export default function RootLayout() {
             <Stack.Screen name="(auth)" />
             <Stack.Screen name="(main)" />
             <Stack.Screen name="(setup)" />
+            <Stack.Screen name="subs" />
+
           </Stack>
           <Toast config={toastConfig}/>
         </SafeAreaProvider>

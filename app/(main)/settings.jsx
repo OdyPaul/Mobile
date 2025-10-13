@@ -36,7 +36,9 @@ export default function Settings() {
   };
 
   const menuItems = [
-    { title: "Wallet Address", icon: "wallet-outline" },
+    { title: "Wallet Address", icon: "wallet-outline",
+       action: () => router.replace("/subs/walletConnect"),
+     },
     { title: "Change Password", icon: "lock-closed-outline" },
     { title: "Set Up Biometrics", icon: "finger-print-outline" },
     { title: "Terms of Service", icon: "document-text-outline" },
