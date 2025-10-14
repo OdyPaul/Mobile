@@ -5,8 +5,6 @@ import store from "../redux_store/store"
 import { Provider } from "react-redux";
 import Toast from "react-native-toast-message";
 import {toastConfig} from "../assets/components/toast"
-import "@walletconnect/react-native-compat";
-import "react-native-get-random-values";
 
 
 export default function RootLayout() {

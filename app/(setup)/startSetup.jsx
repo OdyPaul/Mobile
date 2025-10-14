@@ -9,24 +9,26 @@ export default function StartSetup() {
 
   return (
     <View style={styles.container}>
-      {/* Top Blob */}
       <View style={styles.topBlob} />
-
-      {/* Title & Description */}
       <Text style={styles.title}>Account Setup</Text>
       <Text style={styles.subtitle}>
         Let's get started with setting up your account.
       </Text>
 
-      {/* Proceed Button */}
+      {/* Proceed → Wallet Connect FIRST */}
       <TouchableOpacity
         style={styles.proceedButton}
-        onPress={() => router.push("/personal_info")} 
+        onPress={() =>
+          router.push({
+            // If walletConnect.jsx is inside a (subs) group, the path is just "/walletConnect"
+            pathname: "/subs/walletConnect",
+            params: { from: "setup" },
+          })
+        }
       >
         <Text style={styles.proceedText}>Proceed</Text>
       </TouchableOpacity>
 
-      {/* Skip Button */}
       <TouchableOpacity onPress={() => router.replace("/(main)/home")}>
         <Text style={styles.skipText}>Skip</Text>
       </TouchableOpacity>

@@ -13,15 +13,10 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useDispatch, useSelector } from "react-redux";
-import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import "react-native-get-random-values";
-import { v4 as uuidv4 } from "uuid";
 import { s, vs } from "react-native-size-matters";
 import { createVerificationRequest } from "../../features/verification/verificationSlice";
 import { uploadSelfie, uploadId } from "../../features/photo/photoSlice";
-
-const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export default function Confirm() {
   const { personal, education, selfieUri, idUri, idType } = useLocalSearchParams();
@@ -29,115 +24,100 @@ export default function Confirm() {
   const router = useRouter();
   const { user } = useSelector((state) => state.auth);
   const [loading, setLoading] = useState(false);
-LogBox.ignoreLogs([
-  "InternalBytecode.js",
-  "ENOENT: no such file or directory",
-]);
+
+  LogBox.ignoreLogs([
+    "InternalBytecode.js",
+    "ENOENT: no such file or directory",
+  ]);
+
   // ------------------------------------------------
   // ✅ Safe JSON Parsing
   // ------------------------------------------------
-const safeParse = (data) => {
-  try {
-    if (typeof data === "object") return data;
-    if (typeof data === "string") {
-      if (data.trim().startsWith("{") || data.trim().startsWith("[")) {
-        return JSON.parse(data);
-      } else {
-        console.warn("⚠️ Not JSON, returning raw string:", data);
-        return {};
+  const safeParse = (data) => {
+    try {
+      if (typeof data === "object") return data;
+      if (typeof data === "string") {
+        if (data.trim().startsWith("{") || data.trim().startsWith("[")) {
+          return JSON.parse(data);
+        } else {
+          console.warn("⚠️ Not JSON, returning raw string:", data);
+          return {};
+        }
       }
+      return {};
+    } catch (error) {
+      console.error("❌ JSON parse failed:", error.message, data);
+      return {};
     }
-    return {};
-  } catch (error) {
-    console.error("❌ JSON parse failed:", error.message, data);
-    return {};
-  }
-};
-
+  };
 
   const personalData = safeParse(personal);
   const educationData = safeParse(education);
 
   // ------------------------------------------------
-  // ✅ Submit Handler
+  // ✅ Submit Handler (NO did generation/linking)
   // ------------------------------------------------
-const handleSubmit = async () => {
-  try {
-    setLoading(true);
+  const handleSubmit = async () => {
+    try {
+      setLoading(true);
 
-    const token = await AsyncStorage.getItem("token");
-    const config = {
-      headers: { Authorization: `Bearer ${token || ""}` },
-    };
+      const token = await AsyncStorage.getItem("token");
+      const config = {
+        headers: { Authorization: `Bearer ${token || ""}` },
+      };
 
-    // Always generate pseudoDid first
-    const pseudoDid = `did:polygon:${(user?.email || uuidv4())
-      .replace(/[^a-zA-Z0-9]/g, "")
-      .slice(0, 16)}`;
-
-    // ✅ If DID is missing, link it
-    if (!user?.did) {
-      try {
-        const res = await axios.put(
-          `${API_URL}/api/mobile/${user._id}/did`,
-          { did: pseudoDid }, // send correct DID
-          config
-        );
-        console.log("✅ DID linked:", res.data);
-      } catch (err) {
-        console.error("❌ Error linking DID:", err.message);
-        Alert.alert("Error", "Failed to link wallet/DID.");
-        return;
+      // Upload selfie
+      let selfieRes = null;
+      if (selfieUri) {
+        selfieRes = await dispatch(
+          uploadSelfie({
+            uri: selfieUri,
+            name: "selfie.jpg",
+            type: "image/jpeg",
+          })
+        ).unwrap();
       }
-    }
 
-    // Upload selfie
-    let selfieRes = null;
-    if (selfieUri) {
-      selfieRes = await dispatch(
-        uploadSelfie({
-          uri: selfieUri,
-          name: "selfie.jpg",
-          type: "image/jpeg",
+      // Upload ID
+      let idRes = null;
+      if (idUri) {
+        idRes = await dispatch(
+          uploadId({
+            uri: idUri,
+            name: "id.jpg",
+            type: "image/jpeg",
+          })
+        ).unwrap();
+      }
+      console.log('POST verification payload:', {
+      personal: personalData,
+      education: educationData,
+      selfieImageId: selfieRes?.id || selfieRes?._id || null,
+      idImageId: idRes?.id || idRes?._id || null,
+      did: user?.did || null,
+    });
+
+      // Create Verification Request
+      await dispatch(
+        createVerificationRequest({
+          personal: personalData,
+          education: educationData,
+          selfieImageId: selfieRes?.id || selfieRes?._id || null,
+          idImageId: idRes?.id || idRes?._id || null,
+          // 👇 NO auto-generated DID; send user's DID if it exists, else null
+          did: user?.did || null,
         })
       ).unwrap();
+
+      Alert.alert("✅ Success", "Verification submitted successfully!");
+      router.push("/(main)/settings");
+    } catch (err) {
+      console.error("❌ Submission failed:", err);
+      Alert.alert("Error", "Something went wrong during submission.");
+    } finally {
+      setLoading(false);
     }
-
-    // Upload ID
-    let idRes = null;
-    if (idUri) {
-      idRes = await dispatch(
-        uploadId({
-          uri: idUri,
-          name: "id.jpg",
-          type: "image/jpeg",
-        })
-      ).unwrap();
-    }
-
-    // Create Verification Request
-const response = await dispatch(
-  createVerificationRequest({
-    personal: personalData,
-    education: educationData,
-    selfieImageId: selfieRes?.id || selfieRes?._id || null,
-    idImageId: idRes?.id || idRes?._id || null,
-    did: pseudoDid, // always send pseudoDid
-  })
-).unwrap();
-
-
-    Alert.alert("✅ Success", "Verification submitted successfully!");
-    router.push("/(main)/settings");
-
-  } catch (err) {
-    console.error("❌ Submission failed:", err);
-    Alert.alert("Error", "Something went wrong during submission.");
-  } finally {
-    setLoading(false);
-  }
-};
-
+  };
 
   // ------------------------------------------------
   // ✅ UI Rendering
