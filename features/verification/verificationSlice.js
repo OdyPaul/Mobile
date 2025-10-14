@@ -1,4 +1,3 @@
-// features/verification/verificationSlice.js
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import verificationService from ".././verification/verificationService";
 
@@ -16,8 +15,7 @@ export const createVerificationRequest = createAsyncThunk(
     try {
       return await verificationService.createVerificationRequest(data);
     } catch (error) {
-      // surface the exact message we threw in the service
-      return thunkAPI.rejectWithValue(error?.message || "Request failed");
+      return thunkAPI.rejectWithValue(error.message);
     }
   }
 );
@@ -32,8 +30,6 @@ const verificationSlice = createSlice({
     builder
       .addCase(createVerificationRequest.pending, (state) => {
         state.isLoading = true;
-        state.isError = false;
-        state.message = "";
       })
       .addCase(createVerificationRequest.fulfilled, (state, action) => {
         state.isLoading = false;
@@ -43,7 +39,7 @@ const verificationSlice = createSlice({
       .addCase(createVerificationRequest.rejected, (state, action) => {
         state.isLoading = false;
         state.isError = true;
-        state.message = action.payload || "Request failed";
+        state.message = action.payload;
       });
   },
 });
