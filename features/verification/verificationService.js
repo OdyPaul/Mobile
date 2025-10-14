@@ -2,7 +2,8 @@
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL;
+const API_URL = (process.env.EXPO_PUBLIC_API_URL || "").replace(/\/+$/, "");
+console.log("📡 API_URL at runtime:", API_URL); // must NOT be empty/undefined
 
 const createVerificationRequest = async (data) => {
   try {
@@ -14,7 +15,8 @@ const createVerificationRequest = async (data) => {
         "Content-Type": "application/json",
       },
     };
-
+    
+    console.log("➡️  POST", `${API_URL}/api/verification-request`);
     const response = await axios.post(
       `${API_URL}/api/verification-request`,
       data,

@@ -1,40 +1,58 @@
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL;
+const API_URL = (process.env.EXPO_PUBLIC_API_URL || "").replace(/\/+$/, "");
 
 // -----------------------------------------------------------------------------
-// Register
+// Helper: Persist flat user object
+// -----------------------------------------------------------------------------
+const persistUser = async (userData) => {
+  if (!userData) return;
+  await AsyncStorage.setItem("user", JSON.stringify(userData));
+  if (userData.token) {
+    await AsyncStorage.setItem("token", userData.token);
+  }
+};
+
+// -----------------------------------------------------------------------------
+// REGISTER
 // -----------------------------------------------------------------------------
 const register = async (userData) => {
-  const response = await axios.post(`${API_URL}/api/mobile/users`, userData);
-  if (response.data) {
-    await AsyncStorage.setItem("user", JSON.stringify(response.data));
-  }
-  return response.data;
+  const { data } = await axios.post(`${API_URL}/api/mobile/users`, userData);
+
+  // Normalize shape (some APIs return { user, token })
+  const rawUser = data?.user ?? data;
+  const token = data?.token ?? rawUser?.token ?? "";
+
+  const flattened = { ...rawUser, token };
+  await persistUser(flattened);
+  return flattened;
 };
 
 // -----------------------------------------------------------------------------
-// Login
+// LOGIN
 // -----------------------------------------------------------------------------
 const login = async (userData) => {
-  const response = await axios.post(`${API_URL}/api/mobile/users/login`, userData);
-  const user = response.data;
+  const { data } = await axios.post(`${API_URL}/api/mobile/users/login`, userData);
 
-  if (user.token) await AsyncStorage.setItem("token", user.token);
-  await AsyncStorage.setItem("user", JSON.stringify(user));
+  // Normalize shape
+  const rawUser = data?.user ?? data;
+  const token = data?.token ?? rawUser?.token ?? "";
 
-  return user;
+  const flattened = { ...rawUser, token };
+  await persistUser(flattened);
+  return flattened;
 };
 
 // -----------------------------------------------------------------------------
-// Update DID
+// UPDATE DID
 // -----------------------------------------------------------------------------
 const updateDID = async (walletAddress) => {
-  const user = JSON.parse(await AsyncStorage.getItem("user"));
-  if (!user || !user._id) throw new Error("User not found");
+  const raw = await AsyncStorage.getItem("user");
+  const storedUser = raw ? JSON.parse(raw) : null;
 
-  const token = user.token || (await AsyncStorage.getItem("token"));
+  if (!storedUser?._id) throw new Error("User not found in storage");
+  const token = storedUser?.token || (await AsyncStorage.getItem("token"));
   if (!token) throw new Error("Missing auth token");
 
   const config = {
@@ -44,24 +62,23 @@ const updateDID = async (walletAddress) => {
     },
   };
 
+  // API path: /api/mobile/users/:id/did
   const { data } = await axios.put(
-    `${API_URL}/api/mobile/${user._id}/did`,
-    { walletAddress }, // ✅ correctly sends the address or null
+    `${API_URL}/api/mobile/users/${storedUser._id}/did`,
+    { walletAddress },
     config
   );
 
-  const updatedUser = data?.user || data;
+  // Normalize response
+  const updatedUser = data?.user ?? data;
+  const flattened = { ...updatedUser, token };
+  await persistUser(flattened);
 
-  // ✅ Sync to storage
-  if (updatedUser) {
-    await AsyncStorage.setItem("user", JSON.stringify(updatedUser));
-  }
-
-  return updatedUser;
+  return flattened;
 };
 
 // -----------------------------------------------------------------------------
-// Logout
+// LOGOUT
 // -----------------------------------------------------------------------------
 const logout = async () => {
   await AsyncStorage.removeItem("user");
@@ -69,11 +86,11 @@ const logout = async () => {
 };
 
 // -----------------------------------------------------------------------------
-const authService = {
+// EXPORT
+// -----------------------------------------------------------------------------
+export default {
   register,
   login,
   updateDID,
   logout,
 };
-
-export default authService;

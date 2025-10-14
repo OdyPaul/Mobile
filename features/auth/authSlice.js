@@ -3,7 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import authService from "./authService";
 
 // -----------------------------------------------------------------------------
-// Load user from AsyncStorage
+// Helper: Load flat user from storage
 // -----------------------------------------------------------------------------
 let initialUser = null;
 (async () => {
@@ -12,7 +12,7 @@ let initialUser = null;
 })();
 
 const initialState = {
-  user: initialUser,
+  user: initialUser, // flat user: { _id, name, email, did, verified, token }
   isError: false,
   isSuccess: false,
   isLoading: false,
@@ -24,14 +24,12 @@ const initialState = {
 // -----------------------------------------------------------------------------
 export const register = createAsyncThunk("auth/register", async (user, thunkAPI) => {
   try {
-    const response = await authService.register(user);
-    if (response) {
-      await AsyncStorage.setItem("user", JSON.stringify(response));
-    }
-    return response;
+    const data = await authService.register(user);
+    // data is already flat: { _id, email, name, did, verified, token }
+    await AsyncStorage.setItem("user", JSON.stringify(data));
+    return data;
   } catch (error) {
-    const message =
-      error.response?.data?.message || error.message || "Registration failed";
+    const message = error.response?.data?.message || error.message || "Registration failed";
     return thunkAPI.rejectWithValue(message);
   }
 });
@@ -41,31 +39,25 @@ export const register = createAsyncThunk("auth/register", async (user, thunkAPI)
 // -----------------------------------------------------------------------------
 export const login = createAsyncThunk("auth/login", async (user, thunkAPI) => {
   try {
-    const response = await authService.login(user);
-    if (response) {
-      await AsyncStorage.setItem("user", JSON.stringify(response));
-    }
-    return response;
+    const data = await authService.login(user);
+    await AsyncStorage.setItem("user", JSON.stringify(data));
+    return data;
   } catch (error) {
-    const message =
-      error.response?.data?.message || error.message || "Login failed";
+    const message = error.response?.data?.message || error.message || "Login failed";
     return thunkAPI.rejectWithValue(message);
   }
 });
 
 // -----------------------------------------------------------------------------
-// Update DID (wallet address)
+// Update DID
 // -----------------------------------------------------------------------------
 export const updateDID = createAsyncThunk("auth/updateDID", async (did, thunkAPI) => {
   try {
-    const response = await authService.updateDID(did);
-    if (response) {
-      await AsyncStorage.setItem("user", JSON.stringify(response));
-    }
-    return response;
+    const data = await authService.updateDID(did);
+    await AsyncStorage.setItem("user", JSON.stringify(data));
+    return data;
   } catch (error) {
-    const message =
-      error.response?.data?.message || error.message || "Failed to update DID";
+    const message = error.response?.data?.message || error.message || "Failed to update DID";
     return thunkAPI.rejectWithValue(message);
   }
 });
@@ -95,9 +87,7 @@ export const authSlice = createSlice({
   extraReducers: (builder) => {
     builder
       // Register
-      .addCase(register.pending, (state) => {
-        state.isLoading = true;
-      })
+      .addCase(register.pending, (state) => { state.isLoading = true; })
       .addCase(register.fulfilled, (state, action) => {
         state.isLoading = false;
         state.isSuccess = true;
@@ -111,9 +101,7 @@ export const authSlice = createSlice({
       })
 
       // Login
-      .addCase(login.pending, (state) => {
-        state.isLoading = true;
-      })
+      .addCase(login.pending, (state) => { state.isLoading = true; })
       .addCase(login.fulfilled, (state, action) => {
         state.isLoading = false;
         state.isSuccess = true;
@@ -127,13 +115,11 @@ export const authSlice = createSlice({
       })
 
       // Update DID
-      .addCase(updateDID.pending, (state) => {
-        state.isLoading = true;
-      })
+      .addCase(updateDID.pending, (state) => { state.isLoading = true; })
       .addCase(updateDID.fulfilled, (state, action) => {
         state.isLoading = false;
         state.isSuccess = true;
-        state.user = action.payload; // updated user with DID
+        state.user = action.payload;
       })
       .addCase(updateDID.rejected, (state, action) => {
         state.isLoading = false;
