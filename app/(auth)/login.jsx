@@ -157,28 +157,6 @@ useEffect(() => {
     dispatch(login({ email, password }));
   };
 
-  // --- Toggle biometrics manually on the login page ---
-  const toggleBiometrics = async (value) => {
-    try {
-      setBiometricEnabled(value);
-      await AsyncStorage.setItem("@biometric_pref", value ? "true" : "false");
-
-      if (value) {
-        await AsyncStorage.setItem("@saved_email", email);
-        await AsyncStorage.setItem("@saved_password", password);
-      } else {
-        await AsyncStorage.removeItem("@saved_email");
-        await AsyncStorage.removeItem("@saved_password");
-      }
-
-      Toast.show({
-        type: "success",
-        text1: value ? "Biometrics enabled" : "Biometrics disabled",
-      });
-    } catch (error) {
-      console.log("Error toggling biometrics:", error);
-    }
-  };
 
   return (
     <View style={login_styles.container}>
