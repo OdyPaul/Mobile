@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,8 @@ import {
   ScrollView,
   Image,
   Modal,
+  Switch,
+  ActivityIndicator,
 } from "react-native";
 import { useDispatch } from "react-redux";
 import { logout } from "../../features/auth/authSlice";
@@ -19,11 +21,52 @@ import {
   verticalScale,
 } from "react-native-size-matters";
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import verificationService from "../../features/verification/verificationService"; // ✅ ADD THIS
 
 export default function Settings() {
   const dispatch = useDispatch();
   const router = useRouter();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const saved = await AsyncStorage.getItem("@biometric_pref");
+        if (saved === "true") setBiometricEnabled(true);
+      } catch (error) {
+        console.log("Error loading biometric preference:", error);
+      }
+    })();
+  }, []);
+
+  const toggleBiometrics = async (value) => {
+    try {
+      setBiometricEnabled(value);
+      await AsyncStorage.setItem("@biometric_pref", value ? "true" : "false");
+
+      if (value) {
+        const userRaw = await AsyncStorage.getItem("user");
+        const user = userRaw ? JSON.parse(userRaw) : null;
+        if (user?.email && user?.password) {
+          await AsyncStorage.setItem("@saved_email", user.email);
+          await AsyncStorage.setItem("@saved_password", user.password);
+        }
+      } else {
+        await AsyncStorage.removeItem("@saved_email");
+        await AsyncStorage.removeItem("@saved_password");
+      }
+
+      Toast.show({
+        type: "success",
+        text1: value ? "Biometrics enabled" : "Biometrics disabled",
+      });
+    } catch (error) {
+      console.log("Error saving biometric preference:", error);
+    }
+  };
 
   const handleLogout = async () => {
     await dispatch(logout());
@@ -35,12 +78,48 @@ export default function Settings() {
     router.replace("/(auth)/login");
   };
 
+  // ✅ EDIT PROFILE HANDLER
+  const handleEditProfile = async () => {
+    try {
+      setLoading(true);
+
+      const userRaw = await AsyncStorage.getItem("user");
+      const user = userRaw ? JSON.parse(userRaw) : null;
+
+      // Fetch verification requests
+      const requests = await verificationService.getMyVerificationRequests();
+      const hasPending = requests.some((r) => r.status === "pending");
+
+      if (hasPending) {
+        router.replace("/(setup)/pendingVerification");
+      } else if (user?.verified === "unverified") {
+        router.replace("/(setup)/startSetup");
+      } else {
+        Toast.show({
+          type: "info",
+          text1: "You’re already verified",
+          text2: "No verification needed.",
+        });
+      }
+    } catch (err) {
+      console.log("Error in handleEditProfile:", err);
+      Toast.show({
+        type: "error",
+        text1: "Error checking verification",
+        text2: err.message || "Please try again later.",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const menuItems = [
-    { title: "Wallet Address", icon: "wallet-outline",
-       action: () => router.replace("/subs/walletConnect"),
-     },
+    {
+      title: "Wallet Address",
+      icon: "wallet-outline",
+      action: () => router.replace("/subs/walletConnect"),
+    },
     { title: "Change Password", icon: "lock-closed-outline" },
-    { title: "Set Up Biometrics", icon: "finger-print-outline" },
     { title: "Terms of Service", icon: "document-text-outline" },
     { title: "FAQs", icon: "help-circle-outline" },
     {
@@ -69,8 +148,16 @@ export default function Settings() {
         </View>
 
         {/* Edit Profile Button */}
-        <TouchableOpacity style={styles.editProfileButton}>
-          <Text style={styles.editProfileText}>Edit Profile</Text>
+        <TouchableOpacity
+          style={styles.editProfileButton}
+          onPress={handleEditProfile}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.editProfileText}>Edit Profile</Text>
+          )}
         </TouchableOpacity>
 
         {/* Menu Section */}
@@ -98,6 +185,24 @@ export default function Settings() {
           ))}
         </View>
 
+        {/* Biometrics Switch */}
+        <View style={styles.menuItem}>
+          <View style={styles.menuLeft}>
+            <Ionicons
+              name="finger-print-outline"
+              size={moderateScale(22)}
+              color="#1E5128"
+            />
+            <Text style={styles.menuText}>Use Biometrics</Text>
+          </View>
+          <Switch
+            value={biometricEnabled}
+            onValueChange={toggleBiometrics}
+            trackColor={{ false: "#ccc", true: "#1E5128" }}
+            thumbColor="#fff"
+          />
+        </View>
+
         {/* Contact Section */}
         <View style={styles.contactCard}>
           <View>
@@ -110,7 +215,9 @@ export default function Settings() {
               />
               <Text style={styles.contactText}>Email us at:</Text>
             </View>
-            <Text style={styles.contactEmail}>psau_aas@ikswela.psau.edu.ph</Text>
+            <Text style={styles.contactEmail}>
+              psau_aas@ikswela.psau.edu.ph
+            </Text>
           </View>
         </View>
       </ScrollView>
@@ -124,7 +231,9 @@ export default function Settings() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
-            <Text style={styles.modalTitle}>Are you sure you want to logout?</Text>
+            <Text style={styles.modalTitle}>
+              Are you sure you want to logout?
+            </Text>
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.cancelButton]}

@@ -66,9 +66,34 @@ export const updateDID = createAsyncThunk("auth/updateDID", async (did, thunkAPI
 // Logout
 // -----------------------------------------------------------------------------
 export const logout = createAsyncThunk("auth/logout", async () => {
-  await authService.logout();
-  return null;
+  try {
+    // Keep biometric preference & saved credentials
+    const biometrics = await AsyncStorage.getItem("@biometric_pref");
+    const savedEmail = await AsyncStorage.getItem("@saved_email");
+    const savedPassword = await AsyncStorage.getItem("@saved_password");
+
+    // Remove only the keys related to user auth
+    await AsyncStorage.multiRemove(["user", "token"]);
+
+    // Restore biometric settings and saved creds
+    if (biometrics !== null) {
+      await AsyncStorage.setItem("@biometric_pref", biometrics);
+    }
+    if (savedEmail && savedPassword) {
+      await AsyncStorage.setItem("@saved_email", savedEmail);
+      await AsyncStorage.setItem("@saved_password", savedPassword);
+    }
+
+    // Optional: call API logout if needed
+    await authService.logout();
+
+    return null;
+  } catch (error) {
+    console.log("Logout error:", error);
+    return null;
+  }
 });
+
 
 // -----------------------------------------------------------------------------
 // Slice

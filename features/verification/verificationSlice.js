@@ -19,6 +19,16 @@ export const createVerificationRequest = createAsyncThunk(
     }
   }
 );
+export const fetchMyVerificationRequests = createAsyncThunk(
+  "verification/fetchMyRequests",
+  async (_, thunkAPI) => {
+    try {
+      return await verificationService.getMyVerificationRequests();
+    } catch (error) {
+      return thunkAPI.rejectWithValue(error.message);
+    }
+  }
+);
 
 const verificationSlice = createSlice({
   name: "verification",
@@ -40,7 +50,19 @@ const verificationSlice = createSlice({
         state.isLoading = false;
         state.isError = true;
         state.message = action.payload;
-      });
+      })
+        .addCase(fetchMyVerificationRequests.pending, (state) => {
+        state.isLoading = true;
+        })
+        .addCase(fetchMyVerificationRequests.fulfilled, (state, action) => {
+          state.isLoading = false;
+          state.requests = action.payload;
+        })
+        .addCase(fetchMyVerificationRequests.rejected, (state, action) => {
+          state.isLoading = false;
+          state.isError = true;
+          state.message = action.payload;
+        });
   },
 });
 

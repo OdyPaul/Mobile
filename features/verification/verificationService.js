@@ -32,4 +32,21 @@ const createVerificationRequest = async (data) => {
   }
 };
 
-export default { createVerificationRequest };
+// ✅ New: fetch user’s verification requests
+const getMyVerificationRequests = async () => {
+  try {
+    const token = await AsyncStorage.getItem("token");
+    const config = {
+      headers: { Authorization: `Bearer ${token || ""}` },
+    };
+    const res = await axios.get(`${API_URL}/api/verification-request/my`, config);
+    return res.data;
+  } catch (error) {
+    console.error("❌ getMyVerificationRequests error:", error?.response?.data || error);
+    throw new Error(
+      error.response?.data?.message || error.message || "Failed to fetch verification requests"
+    );
+  }
+};
+
+export default { createVerificationRequest, getMyVerificationRequests  };

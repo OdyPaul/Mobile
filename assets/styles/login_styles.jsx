@@ -47,6 +47,16 @@ export const login_styles = StyleSheet.create({
     alignItems: "center",
     marginTop: vs(5),
   },
+  biometrics:{
+  flexDirection: "row", 
+  alignItems: "center", 
+  marginBottom: 15
+  },
+  biometrics_text:{
+     color: "#555", 
+     marginRight: s(10), 
+     marginLeft: s(5)
+  },
   loginText: {
     color: "#FFFFFF",
     fontWeight: "bold",

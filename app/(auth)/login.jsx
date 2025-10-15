@@ -1,5 +1,12 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from "react-native";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  Alert,
+  Switch,
+} from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { s, vs, ms } from "react-native-size-matters";
@@ -8,17 +15,132 @@ import { login_styles } from "../../assets/styles/login_styles";
 import { useDispatch, useSelector } from "react-redux";
 import { login, reset } from "../../features/auth/authSlice";
 import Toast from "react-native-toast-message";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as LocalAuthentication from "expo-local-authentication";
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+
   const dispatch = useDispatch();
   const router = useRouter();
+  const { user, isError, isSuccess, message } = useSelector(
+    (state) => state.auth
+  );
 
+  // --- Check if biometrics is enabled ---
+  useEffect(() => {
+    const checkBiometrics = async () => {
+      const pref = await AsyncStorage.getItem("@biometric_pref");
+      setBiometricEnabled(pref === "true");
+    };
+    checkBiometrics();
+  }, []);
 
-  const { user, isError, isSuccess, message } = useSelector((state) => state.auth);
+  // --- Try automatic biometric login if enabled ---
+useEffect(() => {
+  const tryBiometricLogin = async () => {
+    if (!biometricEnabled) return;
 
+    const savedEmail = await AsyncStorage.getItem("@saved_email");
+    const savedPassword = await AsyncStorage.getItem("@saved_password");
+    if (!savedEmail || !savedPassword) return;
+
+    const hasHardware = await LocalAuthentication.hasHardwareAsync();
+    const supported = await LocalAuthentication.isEnrolledAsync();
+    if (!hasHardware || !supported) return;
+
+    // Small delay to ensure UI is ready
+    setTimeout(() => {
+      Alert.alert(
+        "Login with Biometrics",
+        "Would you like to log in using your saved biometrics?",
+        [
+          { text: "No", style: "cancel" },
+          {
+            text: "Yes",
+            onPress: async () => {
+              const result = await LocalAuthentication.authenticateAsync({
+                promptMessage: "Authenticate to log in",
+              });
+              if (result.success) {
+                dispatch(login({ email: savedEmail, password: savedPassword }));
+              } else {
+                Toast.show({
+                  type: "error",
+                  text1: "Biometric authentication failed",
+                });
+              }
+            },
+          },
+        ]
+      );
+    }, 500); // Wait 0.5s to ensure screen is visible
+  };
+
+  tryBiometricLogin();
+}, [biometricEnabled]);
+
+  // --- Post-login flow ---
+  useEffect(() => {
+    const handlePostLogin = async () => {
+      if (isError) {
+        Toast.show({
+          type: "error",
+          text1: "Login Failed",
+          text2: message || "Invalid credentials",
+        });
+        dispatch(reset());
+        return;
+      }
+
+      if (isSuccess || user) {
+        Toast.show({
+          type: "success",
+          text1: "Login Successful",
+          text2: "Redirecting...",
+        });
+
+        // ✅ Save credentials if biometrics ON
+        const biometricsChoice = await AsyncStorage.getItem("@biometric_pref");
+        if (biometricsChoice === "true") {
+          await AsyncStorage.setItem("@saved_email", email);
+          await AsyncStorage.setItem("@saved_password", password);
+        } else {
+          await AsyncStorage.removeItem("@saved_email");
+          await AsyncStorage.removeItem("@saved_password");
+        }
+
+        // ✅ Fetch user's verification requests
+        try {
+          const requests = await verificationService.getMyVerificationRequests();
+          const hasPending = requests.some((r) => r.status === "pending");
+
+          if (hasPending) {
+            // Already has a pending verification → go to waiting screen
+            router.replace("/(setup)/pendingVerification");
+          } else if (user?.verified === "unverified") {
+            // No pending → needs to start setup
+            router.replace("/(setup)/startSetup");
+          } else {
+            // Verified → go to home
+            router.replace("/(main)/home");
+          }
+        } catch (err) {
+          console.log("Error checking verification:", err);
+          router.replace("/(main)/home"); // fallback
+        }
+
+        dispatch(reset());
+      }
+    };
+
+    handlePostLogin();
+  }, [user, isError, isSuccess, message, dispatch]);
+
+  // --- Manual login handler ---
   const handleLogin = () => {
     if (!email || !password) {
       Alert.alert("Error", "Please fill in all fields");
@@ -35,38 +157,32 @@ export default function Login() {
     dispatch(login({ email, password }));
   };
 
-  useEffect(() => {
-  if (isError) {
-    Toast.show({
-      type: "error",
-      text1: "Login Failed",
-      text2: message || "Invalid credentials",
-    });
-    dispatch(reset());
-  }
+  // --- Toggle biometrics manually on the login page ---
+  const toggleBiometrics = async (value) => {
+    try {
+      setBiometricEnabled(value);
+      await AsyncStorage.setItem("@biometric_pref", value ? "true" : "false");
 
-  if (isSuccess || user) {
-    Toast.show({
-      type: "success",
-      text1: "Login Successful",
-      text2: "Redirecting...",
-    });
+      if (value) {
+        await AsyncStorage.setItem("@saved_email", email);
+        await AsyncStorage.setItem("@saved_password", password);
+      } else {
+        await AsyncStorage.removeItem("@saved_email");
+        await AsyncStorage.removeItem("@saved_password");
+      }
 
-    // ✅ Check verification status
-    if (user?.verified === "unverified") {
-      router.replace("/(setup)/startSetup");
-    } else {
-      router.replace("/(main)/home");
+      Toast.show({
+        type: "success",
+        text1: value ? "Biometrics enabled" : "Biometrics disabled",
+      });
+    } catch (error) {
+      console.log("Error toggling biometrics:", error);
     }
-
-    dispatch(reset());
-  }
-}, [user, isError, isSuccess, message, dispatch]);
-
+  };
 
   return (
     <View style={login_styles.container}>
-      {/* Logo / Illustration */}
+      {/* Logo */}
       <View style={login_styles.logoContainer}>
         <LoginLogo width={s(300)} height={vs(280)} />
       </View>
@@ -109,6 +225,36 @@ export default function Login() {
             />
           </TouchableOpacity>
         </View>
+        {/* 🔒 Biometric toggle below button */}
+
+          <View style={login_styles.biometrics}>
+          <Text style={login_styles.biometrics_text}>Use Biometrics</Text>
+          <TouchableOpacity
+            onPress={async () => {
+              const newPref = !biometricEnabled;
+              setBiometricEnabled(newPref);
+              await AsyncStorage.setItem("@biometric_pref", newPref ? "true" : "false");
+            }}
+            style={{
+              width: 50,
+              height: 25,
+              borderRadius: 15,
+              backgroundColor: biometricEnabled ? "#4CAF50" : "#ccc",
+              justifyContent: "center",
+              alignItems: biometricEnabled ? "flex-end" : "flex-start",
+              paddingHorizontal: 5,
+            }}
+          >
+            <View
+              style={{
+                width: 20,
+                height: 20,
+                borderRadius: 10,
+                backgroundColor: "white",
+              }}
+            />
+          </TouchableOpacity>
+        </View>
 
         {/* Login Button */}
         <TouchableOpacity
@@ -118,6 +264,8 @@ export default function Login() {
         >
           <Text style={login_styles.loginText}>Login</Text>
         </TouchableOpacity>
+
+
 
         {/* Footer */}
         <Text style={login_styles.footerText}>

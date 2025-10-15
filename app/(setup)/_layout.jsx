@@ -10,6 +10,10 @@ export default function SetupLayout() {
       <Stack.Screen name="selfie" />
       <Stack.Screen name="valid_id" />
       <Stack.Screen name="confirm" />
+      <Stack.Screen name="pendingVerification" />
+
+
+      
     </Stack>
   );
 }
