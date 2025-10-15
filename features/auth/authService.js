@@ -34,8 +34,8 @@ const register = async (userData) => {
 // -----------------------------------------------------------------------------
 const login = async (userData) => {
   const { data } = await axios.post(`${API_URL}/api/mobile/users/login`, userData);
+  console.log("Login API Response:", JSON.stringify(data, null, 2)); // 👈 add this
 
-  // Normalize shape
   const rawUser = data?.user ?? data;
   const token = data?.token ?? rawUser?.token ?? "";
 
@@ -43,6 +43,7 @@ const login = async (userData) => {
   await persistUser(flattened);
   return flattened;
 };
+
 
 // -----------------------------------------------------------------------------
 // UPDATE DID

@@ -65,14 +65,22 @@ useEffect(() => {
               const result = await LocalAuthentication.authenticateAsync({
                 promptMessage: "Authenticate to log in",
               });
-              if (result.success) {
-                dispatch(login({ email: savedEmail, password: savedPassword }));
-              } else {
-                Toast.show({
-                  type: "error",
-                  text1: "Biometric authentication failed",
-                });
-              }
+                if (result.success) {
+                  Toast.show({
+                    type: "info",
+                    text1: "Logging in...",
+                    text2: "Authenticating with biometrics",
+                    visibilityTime: 30000, // long enough for API call
+                  });
+
+                  dispatch(login({ email: savedEmail, password: savedPassword }));
+                } else {
+                  Toast.show({
+                    type: "error",
+                    text1: "Biometric authentication failed",
+                  });
+                }
+
             },
           },
         ]

@@ -21,7 +21,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { updateDID } from "../../features/auth/authSlice";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { isAddress, getAddress } from "ethers";
-
+import { walletConnect_styles } from "../../assets/styles/walletConnect_styles";
 const projectId = "2909466446bb37af0f229b405872de47";
 
 const providerMetadata = {
@@ -34,7 +34,7 @@ const providerMetadata = {
 
 export default function ConnectWalletScreen() {
   const router = useRouter();
-  const { from } = useLocalSearchParams(); // 👈 detect source
+  const { from } = useLocalSearchParams();
   const cameFromSetup = String(from || "") === "setup";
   const dispatch = useDispatch();
   const user = useSelector((state) => state.auth.user);
@@ -48,56 +48,40 @@ export default function ConnectWalletScreen() {
   const [savedAddress, setSavedAddress] = useState(null);
   const [didInput, setDidInput] = useState("");
 
-  // Optional native header
+  // 🧩 1. Handle if user already has DID
   useEffect(() => {
-    // no-op; Stack.Screen is declared in render
-  }, []);
+    if (user?.did) {
+      // Auto-display the saved DID as connected wallet
+      const clean = user.did.replace("did:polygon:", "");
+      setSavedAddress(clean);
+    }
+  }, [user]);
 
-  // Load saved wallet on mount
-  useEffect(() => {
-    const loadWallet = async () => {
-      try {
-        const stored = await AsyncStorage.getItem("walletSession");
-        if (stored) {
-          const { address: a } = JSON.parse(stored);
-          setSavedAddress(a);
-        }
-      } catch (e) {
-        console.error("Load wallet error:", e);
-      }
-    };
-    loadWallet();
-  }, []);
-
-  // Auto-save wallet if connected (normalize to checksum)
-  useEffect(() => {
-    const saveIfConnected = async () => {
-      try {
-        if (isConnected && address) {
-          const checksum = getAddress(address); // throws if invalid
-          await AsyncStorage.setItem("walletSession", JSON.stringify({ address: checksum }));
-          setSavedAddress(checksum);
-
-          // Update user DID if needed
-          if (!user || !user.did) {
-            try {
-              await dispatch(updateDID(checksum)).unwrap();
-            } catch (err) {
-              console.error("DID update failed:", err);
-            }
+  // 🧩 2. Auto-save connected wallet (only if no DID yet)
+    useEffect(() => {
+      const saveIfConnected = async () => {
+        try {
+          if (isConnected && address && !user?.did) {
+            const checksum = getAddress(address);
+            await AsyncStorage.setItem("walletSession", JSON.stringify({ address: checksum }));
+            setSavedAddress(checksum);
+            await dispatch(updateDID(checksum)).unwrap();
           }
+        } catch (e) {
+          console.error("Auto-save checksum error:", e);
         }
-      } catch (e) {
-        console.error("Auto-save checksum error:", e);
-      }
-    };
-    saveIfConnected();
-  }, [isConnected, address]);
+      };
+      saveIfConnected();
+    }, [isConnected, address, user]);
+
 
   const connectWallet = async () => {
+    if (user?.did) {
+      Alert.alert("Wallet Already Linked", "You already have a linked wallet. Please disconnect it first to update.");
+      return;
+    }
     try {
       setLoading(true);
-      await new Promise((resolve) => setTimeout(resolve, 200));
       await open();
     } catch (err) {
       console.error("Wallet connect failed:", err);
@@ -118,7 +102,7 @@ export default function ConnectWalletScreen() {
             await AsyncStorage.removeItem("walletSession");
             setSavedAddress(null);
             await dispatch(updateDID(null)).unwrap();
-            if (provider && provider.disconnect) await provider.disconnect();
+            if (provider?.disconnect) await provider.disconnect();
             await close();
             Alert.alert("✅ Wallet Disconnected", "Your wallet has been unlinked.", [
               { text: "OK", onPress: () => router.push("/(main)/settings") },
@@ -134,62 +118,45 @@ export default function ConnectWalletScreen() {
     ]);
   };
 
-  // Validate DID or plain wallet, then confirm & save
   const validateAndSaveDID = async () => {
+    if (user?.did) {
+      Alert.alert("Wallet Already Linked", "You already have a linked wallet. Please disconnect it first to change it.");
+      return;
+    }
+
     try {
       let input = (didInput || "").trim();
-
-      // Accept plain 0x... address and auto-convert to did:polygon
       if (input.startsWith("0x")) {
-        if (!isAddress(input)) {
-          Alert.alert("Invalid Address", "Please enter a valid Ethereum/Polygon address.");
-          return;
-        }
+        if (!isAddress(input)) return Alert.alert("Invalid Address", "Please enter a valid wallet.");
         input = `did:polygon:${input}`;
       }
-
       if (!input.startsWith("did:polygon:")) {
-        Alert.alert(
-          "Invalid Format",
-          "Your input must be a valid wallet (0x...) or DID (did:polygon:0x...)."
-        );
-        return;
+        return Alert.alert("Invalid Format", "Must be a 0x... or did:polygon:0x...");
       }
 
       const rawAddr = input.replace("did:polygon:", "").trim();
-      if (!isAddress(rawAddr)) {
-        Alert.alert("Invalid Address", "Please enter a valid Ethereum/Polygon address.");
-        return;
-      }
+      if (!isAddress(rawAddr)) return Alert.alert("Invalid Address", "Please enter a valid wallet.");
 
-      // Normalize to checksum + show a confirmation dialog
       const checksum = getAddress(rawAddr);
       const didString = `did:polygon:${checksum}`;
 
-      Alert.alert(
-        "Confirm Wallet",
-        `Save this wallet to your account?\n\nAddress:\n${checksum}\n\nDID:\n${didString}`,
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Save",
-            onPress: async () => {
-              try {
-                await AsyncStorage.setItem("walletSession", JSON.stringify({ address: checksum }));
-                setSavedAddress(checksum);
-                await dispatch(updateDID(checksum)).unwrap();
-                Alert.alert(
-                  "✅ Saved",
-                  "Your wallet address has been saved and linked to your account."
-                );
-              } catch (err) {
-                console.error("Error saving DID:", err);
-                Alert.alert("Error", "Failed to save DID.");
-              }
-            },
+      Alert.alert("Confirm Wallet", `Save this wallet?\n\n${didString}`, [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Save",
+          onPress: async () => {
+            try {
+              await AsyncStorage.setItem("walletSession", JSON.stringify({ address: checksum }));
+              setSavedAddress(checksum);
+              await dispatch(updateDID(checksum)).unwrap();
+              Alert.alert("✅ Saved", "Your wallet has been saved.");
+            } catch (err) {
+              console.error("Error saving DID:", err);
+              Alert.alert("Error", "Failed to save DID.");
+            }
           },
-        ]
-      );
+        },
+      ]);
     } catch (err) {
       console.error("Validation error:", err);
       Alert.alert("Error", "An unexpected error occurred.");
@@ -197,65 +164,51 @@ export default function ConnectWalletScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <Stack.Screen
-        options={{ headerTitle: "Connect Wallet", headerBackTitleVisible: false }}
-      />
+    <View style={walletConnect_styles.container}>
+      <Stack.Screen options={{ headerTitle: "Connect Wallet" }} />
 
-      <TouchableOpacity
-        style={styles.backButton}
-        onPress={() => router.push("/(main)/settings")}
-      >
+      <TouchableOpacity style={walletConnect_styles.backButton} onPress={() => router.push("/(main)/settings")}>
         <Ionicons name="arrow-back" size={24} color="#000" />
-        <Text style={styles.backText}>Back</Text>
+        <Text style={walletConnect_styles.backText}>Back</Text>
       </TouchableOpacity>
 
-      <Text style={styles.title}>Connect Your MetaMask Wallet</Text>
+      <Text style={walletConnect_styles.title}>Connect Your MetaMask Wallet</Text>
 
       {loading ? (
         <ActivityIndicator size="large" color="#007bff" />
+      ) : user?.did ? (
+        // 🧩 3. If user DID exists, only show "Connected" + allow Disconnect
+        <>
+          <Text style={walletConnect_styles.addr}>Linked DID:</Text>
+          <Text style={walletConnect_styles.addressValue}>{user.did}</Text>
+          <Button title="Disconnect Wallet" color="red" onPress={disconnectWallet} />
+        </>
       ) : savedAddress ? (
         <>
-          <Text style={styles.addr}>Connected Address:</Text>
-          <Text style={styles.addressValue}>{savedAddress}</Text>
-          <View style={{ height: 10 }} />
+          <Text style={walletConnect_styles.addr}>Connected Address:</Text>
+          <Text style={walletConnect_styles.addressValue}>{savedAddress}</Text>
           <Button title="Disconnect Wallet" color="red" onPress={disconnectWallet} />
         </>
       ) : (
         <>
-          {/* WalletConnect Button */}
           <Button title="Connect Wallet" onPress={connectWallet} />
-
-          {/* Helper Text */}
-          <Text style={styles.helperText}>
-            ⚠️ If WalletConnect is not working, type your address below.
-          </Text>
-
-          <View style={{ height: 30 }} />
-          <Text style={styles.instruction}>Type your wallet address from MetaMask here:</Text>
+          <Text style={walletConnect_styles.helperText}>⚠️ If WalletConnect fails, type your address below.</Text>
+          <View style={{ height: 20 }} />
           <TextInput
-            style={styles.input}
+            style={walletConnect_styles.input}
             placeholder="0x... or did:polygon:0x..."
             value={didInput}
             onChangeText={setDidInput}
             autoCapitalize="none"
           />
-          <View style={{ height: 10 }} />
           <Button title="Validate and Save DID" onPress={validateAndSaveDID} />
         </>
       )}
 
-      {/* 👇 Only show when opened from StartSetup */}
       {cameFromSetup && (
-        <>
-          <View style={{ height: 20 }} />
-          <TouchableOpacity
-            style={styles.nextButton}
-            onPress={() => router.push("/personal_info")}
-          >
-            <Text style={styles.nextText}>Continue to Personal Info</Text>
-          </TouchableOpacity>
-        </>
+        <TouchableOpacity style={walletConnect_styles.nextButton} onPress={() => router.push("/personal_info")}>
+          <Text style={walletConnect_styles.nextText}>Continue to Personal Info</Text>
+        </TouchableOpacity>
       )}
 
       <WalletConnectModal projectId={projectId} providerMetadata={providerMetadata} />
@@ -263,38 +216,3 @@ export default function ConnectWalletScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
-  title: { fontSize: 22, fontWeight: "bold", marginBottom: 16 },
-  addr: { fontSize: 14, marginBottom: 6, textAlign: "center" },
-  addressValue: { fontSize: 12, color: "#555", textAlign: "center", marginBottom: 20 },
-  backButton: {
-    position: "absolute",
-    top: 60,
-    left: 20,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  backText: { marginLeft: 6, fontSize: 16, color: "#000" },
-  instruction: { fontSize: 14, marginBottom: 10, textAlign: "center" },
-  input: {
-    width: "100%",
-    borderWidth: 1,
-    borderColor: "#ccc",
-    padding: 10,
-    borderRadius: 8,
-  },
-  helperText: {
-    color: "#d9534f",
-    fontSize: 14,
-    textAlign: "center",
-    marginTop: 8,
-  },
-  nextButton: {
-    backgroundColor: "#0066FF",
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-  },
-  nextText: { color: "#fff", fontWeight: "600" },
-});

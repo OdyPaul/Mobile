@@ -20,61 +20,60 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import verificationService from "../../features/verification/verificationService";
 
+
 export default function Settings() {
   const dispatch = useDispatch();
   const router = useRouter();
 
-  // 👇 get flat user from Redux; fall back to storage
-  const reduxUser = useSelector((s) => s.auth.user); // {_id,name,email,did,verified,createdAt,token}
-  const [storageUser, setStorageUser] = useState(null);
+  // Redux user may be empty on first render before persistence hydrates
+  const reduxUser = useSelector((s) => s.auth.user);
 
+  const [localUser, setLocalUser] = useState(null);
+  const [loading, setLoading] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [hydrating, setHydrating] = useState(true);
+
+  // ✅ 1. Load user from AsyncStorage for fallback
+  console.log("Redux User:", JSON.stringify(reduxUser, null, 2));
 
   useEffect(() => {
     (async () => {
       try {
-        const saved = await AsyncStorage.getItem("@biometric_pref");
-        if (saved === "true") setBiometricEnabled(true);
-      } catch {}
+        const stored = await AsyncStorage.getItem("user");
+        setLocalUser(stored ? JSON.parse(stored) : null);
+      } catch (err) {
+        console.error("Error reading stored user:", err);
+      } finally {
+        setHydrating(false);
+      }
     })();
   }, []);
 
+  // ✅ 2. Load biometric pref
   useEffect(() => {
     (async () => {
-      try {
-        const raw = await AsyncStorage.getItem("user");
-        setStorageUser(raw ? JSON.parse(raw) : null);
-      } catch {}
+      const pref = await AsyncStorage.getItem("@biometric_pref");
+      if (pref === "true") setBiometricEnabled(true);
     })();
   }, []);
 
-  const user = reduxUser || storageUser;
-  const displayName = user?.name ?? "—";
-  const displayEmail = user?.email ?? "—";
-  const memberSince = user?.createdAt
-    ? new Date(user.createdAt).toLocaleDateString()
-    : "—";
-    console.log(`${memberSince}`)
+  // ✅ 3. Merge Redux + Storage fallback safely
+  const user =
+    reduxUser && reduxUser.email ? reduxUser : localUser && localUser.email ? localUser : null;
+
+  // ✅ 4. Derived display fields
+  const displayName = user?.name || "—";
+  const displayEmail = user?.email || "—";
+  const memberSince =
+    user?.createdAt && !isNaN(new Date(user.createdAt))
+      ? new Date(user.createdAt).toLocaleDateString()
+      : "—";
 
   const toggleBiometrics = async (value) => {
     try {
       setBiometricEnabled(value);
       await AsyncStorage.setItem("@biometric_pref", value ? "true" : "false");
-
-      if (value) {
-        // store last-used creds if you have them saved elsewhere
-        const savedEmail = await AsyncStorage.getItem("@saved_email");
-        const savedPassword = await AsyncStorage.getItem("@saved_password");
-        if (!savedEmail || !savedPassword) {
-          // you can optionally save from a known source here
-        }
-      } else {
-        await AsyncStorage.removeItem("@saved_email");
-        await AsyncStorage.removeItem("@saved_password");
-      }
-
       Toast.show({
         type: "success",
         text1: value ? "Biometrics enabled" : "Biometrics disabled",
@@ -102,7 +101,7 @@ export default function Settings() {
 
       if (hasPending) {
         router.replace("/(setup)/pendingVerification");
-      } else if ((user?.verified ?? "unverified") === "unverified") {
+      } else if (!user?.verified || user.verified === "unverified") {
         router.replace("/(setup)/startSetup");
       } else {
         Toast.show({
@@ -131,6 +130,16 @@ export default function Settings() {
     { title: "Log out", icon: "log-out-outline", action: () => setShowLogoutModal(true) },
   ];
 
+  // ✅ Loading state before hydration
+  if (hydrating) {
+    return (
+      <SafeAreaView style={[styles.safeArea, { justifyContent: "center", alignItems: "center" }]}>
+        <ActivityIndicator size="large" color="#1E5128" />
+        <Text style={{ marginTop: 10, color: "#1E5128" }}>Loading user data...</Text>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container}>
@@ -147,16 +156,20 @@ export default function Settings() {
           </View>
         </View>
 
-        {/* Edit Profile Button */}
+        {/* Edit Profile */}
         <TouchableOpacity
           style={styles.editProfileButton}
           onPress={handleEditProfile}
           disabled={loading}
         >
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.editProfileText}>Edit Profile</Text>}
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.editProfileText}>Edit Profile</Text>
+          )}
         </TouchableOpacity>
 
-        {/* Menu Section */}
+        {/* Menu */}
         <View style={styles.menuSection}>
           {menuItems.map((item, index) => (
             <TouchableOpacity key={index} style={styles.menuItem} onPress={item.action}>
@@ -167,41 +180,38 @@ export default function Settings() {
               <Ionicons name="chevron-forward" size={moderateScale(20)} color="#888" />
             </TouchableOpacity>
           ))}
-                  <View style={styles.menuItem}>
-          <View style={styles.menuLeft}>
-            <Ionicons name="finger-print-outline" size={moderateScale(22)} color="#1E5128" />
-            <Text style={styles.menuText}>Use Biometrics</Text>
-          </View>
-          <Switch
-            value={biometricEnabled}
-            onValueChange={toggleBiometrics}
-            trackColor={{ false: "#ccc", true: "#1E5128" }}
-            thumbColor="#fff"
-          />
-        </View>
-        </View>
 
-        {/* Biometrics Switch */}
-
-
-        {/* Contact Section */}
-        <View style={styles.contactCard}>
-          <View>
-            <View style={styles.iconText}>
-              <Ionicons
-                name="mail-outline"
-                size={moderateScale(22)}
-                color="#1E5128"
-                style={{ marginRight: scale(8) }}
-              />
-              <Text style={styles.contactText}>Email us at:</Text>
+          {/* Biometrics */}
+          <View style={styles.menuItem}>
+            <View style={styles.menuLeft}>
+              <Ionicons name="finger-print-outline" size={moderateScale(22)} color="#1E5128" />
+              <Text style={styles.menuText}>Use Biometrics</Text>
             </View>
-            <Text style={styles.contactEmail}>psau_aas@ikswela.psau.edu.ph</Text>
+            <Switch
+              value={biometricEnabled}
+              onValueChange={toggleBiometrics}
+              trackColor={{ false: "#ccc", true: "#1E5128" }}
+              thumbColor="#fff"
+            />
           </View>
+        </View>
+
+        {/* Contact */}
+        <View style={styles.contactCard}>
+          <View style={styles.iconText}>
+            <Ionicons
+              name="mail-outline"
+              size={moderateScale(22)}
+              color="#1E5128"
+              style={{ marginRight: scale(8) }}
+            />
+            <Text style={styles.contactText}>Email us at:</Text>
+          </View>
+          <Text style={styles.contactEmail}>psau_aas@ikswela.psau.edu.ph</Text>
         </View>
       </ScrollView>
 
-      {/* Logout Confirmation Modal */}
+      {/* Logout Modal */}
       <Modal
         visible={showLogoutModal}
         transparent
@@ -218,7 +228,6 @@ export default function Settings() {
               >
                 <Text style={styles.cancelText}>Cancel</Text>
               </TouchableOpacity>
-
               <TouchableOpacity
                 style={[styles.modalButton, styles.confirmButton]}
                 onPress={() => {
