@@ -48,11 +48,10 @@ const login = async (userData) => {
 // UPDATE DID
 // -----------------------------------------------------------------------------
 const updateDID = async (walletAddress) => {
-  const raw = await AsyncStorage.getItem("user");
-  const storedUser = raw ? JSON.parse(raw) : null;
+  const user = JSON.parse(await AsyncStorage.getItem("user"));
+  if (!user || !user._id) throw new Error("User not found");
 
-  if (!storedUser?._id) throw new Error("User not found in storage");
-  const token = storedUser?.token || (await AsyncStorage.getItem("token"));
+  const token = user.token || (await AsyncStorage.getItem("token"));
   if (!token) throw new Error("Missing auth token");
 
   const config = {
@@ -62,20 +61,22 @@ const updateDID = async (walletAddress) => {
     },
   };
 
-  // API path: /api/mobile/users/:id/did
   const { data } = await axios.put(
-    `${API_URL}/api/mobile/users/${storedUser._id}/did`,
-    { walletAddress },
+    `${API_URL}/api/mobile/${user._id}/did`,
+    { walletAddress }, // ✅ correctly sends the address or null
     config
   );
 
-  // Normalize response
-  const updatedUser = data?.user ?? data;
-  const flattened = { ...updatedUser, token };
-  await persistUser(flattened);
+  const updatedUser = data?.user || data;
 
-  return flattened;
+  // ✅ Sync to storage
+  if (updatedUser) {
+    await AsyncStorage.setItem("user", JSON.stringify(updatedUser));
+  }
+
+  return updatedUser;
 };
+
 
 // -----------------------------------------------------------------------------
 // LOGOUT

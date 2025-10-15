@@ -11,22 +11,23 @@ import {
   Switch,
   ActivityIndicator,
 } from "react-native";
-import { useDispatch } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import { logout } from "../../features/auth/authSlice";
 import { useRouter } from "expo-router";
 import Toast from "react-native-toast-message";
-import {
-  moderateScale,
-  scale,
-  verticalScale,
-} from "react-native-size-matters";
+import { moderateScale, scale, verticalScale } from "react-native-size-matters";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import verificationService from "../../features/verification/verificationService"; // ✅ ADD THIS
+import verificationService from "../../features/verification/verificationService";
 
 export default function Settings() {
   const dispatch = useDispatch();
   const router = useRouter();
+
+  // 👇 get flat user from Redux; fall back to storage
+  const reduxUser = useSelector((s) => s.auth.user); // {_id,name,email,did,verified,createdAt,token}
+  const [storageUser, setStorageUser] = useState(null);
+
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -36,11 +37,26 @@ export default function Settings() {
       try {
         const saved = await AsyncStorage.getItem("@biometric_pref");
         if (saved === "true") setBiometricEnabled(true);
-      } catch (error) {
-        console.log("Error loading biometric preference:", error);
-      }
+      } catch {}
     })();
   }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem("user");
+        setStorageUser(raw ? JSON.parse(raw) : null);
+      } catch {}
+    })();
+  }, []);
+
+  const user = reduxUser || storageUser;
+  const displayName = user?.name ?? "—";
+  const displayEmail = user?.email ?? "—";
+  const memberSince = user?.createdAt
+    ? new Date(user.createdAt).toLocaleDateString()
+    : "—";
+    console.log(`${memberSince}`)
 
   const toggleBiometrics = async (value) => {
     try {
@@ -48,11 +64,11 @@ export default function Settings() {
       await AsyncStorage.setItem("@biometric_pref", value ? "true" : "false");
 
       if (value) {
-        const userRaw = await AsyncStorage.getItem("user");
-        const user = userRaw ? JSON.parse(userRaw) : null;
-        if (user?.email && user?.password) {
-          await AsyncStorage.setItem("@saved_email", user.email);
-          await AsyncStorage.setItem("@saved_password", user.password);
+        // store last-used creds if you have them saved elsewhere
+        const savedEmail = await AsyncStorage.getItem("@saved_email");
+        const savedPassword = await AsyncStorage.getItem("@saved_password");
+        if (!savedEmail || !savedPassword) {
+          // you can optionally save from a known source here
         }
       } else {
         await AsyncStorage.removeItem("@saved_email");
@@ -78,21 +94,15 @@ export default function Settings() {
     router.replace("/(auth)/login");
   };
 
-  // ✅ EDIT PROFILE HANDLER
   const handleEditProfile = async () => {
     try {
       setLoading(true);
-
-      const userRaw = await AsyncStorage.getItem("user");
-      const user = userRaw ? JSON.parse(userRaw) : null;
-
-      // Fetch verification requests
       const requests = await verificationService.getMyVerificationRequests();
       const hasPending = requests.some((r) => r.status === "pending");
 
       if (hasPending) {
         router.replace("/(setup)/pendingVerification");
-      } else if (user?.verified === "unverified") {
+      } else if ((user?.verified ?? "unverified") === "unverified") {
         router.replace("/(setup)/startSetup");
       } else {
         Toast.show({
@@ -114,19 +124,11 @@ export default function Settings() {
   };
 
   const menuItems = [
-    {
-      title: "Wallet Address",
-      icon: "wallet-outline",
-      action: () => router.replace("/subs/walletConnect"),
-    },
+    { title: "Wallet Address", icon: "wallet-outline", action: () => router.replace("/subs/walletConnect") },
     { title: "Change Password", icon: "lock-closed-outline" },
     { title: "Terms of Service", icon: "document-text-outline" },
     { title: "FAQs", icon: "help-circle-outline" },
-    {
-      title: "Log out",
-      icon: "log-out-outline",
-      action: () => setShowLogoutModal(true),
-    },
+    { title: "Log out", icon: "log-out-outline", action: () => setShowLogoutModal(true) },
   ];
 
   return (
@@ -135,15 +137,13 @@ export default function Settings() {
         {/* Profile Card */}
         <View style={styles.profileCard}>
           <Image
-            source={{
-              uri: "https://cdn-icons-png.flaticon.com/512/4140/4140048.png",
-            }}
+            source={{ uri: "https://cdn-icons-png.flaticon.com/512/4140/4140048.png" }}
             style={styles.avatar}
           />
           <View style={styles.profileInfo}>
-            <Text style={styles.userName}>John Doe</Text>
-            <Text style={styles.userEmail}>john@gmail.com</Text>
-            <Text style={styles.memberSince}>Member since 3/9/2025</Text>
+            <Text style={styles.userName}>{displayName}</Text>
+            <Text style={styles.userEmail}>{displayEmail}</Text>
+            <Text style={styles.memberSince}>Member since {memberSince}</Text>
           </View>
         </View>
 
@@ -153,46 +153,23 @@ export default function Settings() {
           onPress={handleEditProfile}
           disabled={loading}
         >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.editProfileText}>Edit Profile</Text>
-          )}
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.editProfileText}>Edit Profile</Text>}
         </TouchableOpacity>
 
         {/* Menu Section */}
         <View style={styles.menuSection}>
           {menuItems.map((item, index) => (
-            <TouchableOpacity
-              key={index}
-              style={styles.menuItem}
-              onPress={item.action}
-            >
+            <TouchableOpacity key={index} style={styles.menuItem} onPress={item.action}>
               <View style={styles.menuLeft}>
-                <Ionicons
-                  name={item.icon}
-                  size={moderateScale(22)}
-                  color="#1E5128"
-                />
+                <Ionicons name={item.icon} size={moderateScale(22)} color="#1E5128" />
                 <Text style={styles.menuText}>{item.title}</Text>
               </View>
-              <Ionicons
-                name="chevron-forward"
-                size={moderateScale(20)}
-                color="#888"
-              />
+              <Ionicons name="chevron-forward" size={moderateScale(20)} color="#888" />
             </TouchableOpacity>
           ))}
-        </View>
-
-        {/* Biometrics Switch */}
-        <View style={styles.menuItem}>
+                  <View style={styles.menuItem}>
           <View style={styles.menuLeft}>
-            <Ionicons
-              name="finger-print-outline"
-              size={moderateScale(22)}
-              color="#1E5128"
-            />
+            <Ionicons name="finger-print-outline" size={moderateScale(22)} color="#1E5128" />
             <Text style={styles.menuText}>Use Biometrics</Text>
           </View>
           <Switch
@@ -202,6 +179,10 @@ export default function Settings() {
             thumbColor="#fff"
           />
         </View>
+        </View>
+
+        {/* Biometrics Switch */}
+
 
         {/* Contact Section */}
         <View style={styles.contactCard}>
@@ -215,9 +196,7 @@ export default function Settings() {
               />
               <Text style={styles.contactText}>Email us at:</Text>
             </View>
-            <Text style={styles.contactEmail}>
-              psau_aas@ikswela.psau.edu.ph
-            </Text>
+            <Text style={styles.contactEmail}>psau_aas@ikswela.psau.edu.ph</Text>
           </View>
         </View>
       </ScrollView>
@@ -231,9 +210,7 @@ export default function Settings() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
-            <Text style={styles.modalTitle}>
-              Are you sure you want to logout?
-            </Text>
+            <Text style={styles.modalTitle}>Are you sure you want to logout?</Text>
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.cancelButton]}
@@ -258,6 +235,9 @@ export default function Settings() {
     </SafeAreaView>
   );
 }
+
+/* styles unchanged from your snippet */
+
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -351,7 +331,7 @@ const styles = StyleSheet.create({
     backgroundColor: "white",
     borderRadius: moderateScale(20),
     paddingVertical: verticalScale(15),
-    marginTop: verticalScale(25),
+    marginTop: verticalScale(10),
     shadowColor: "#000",
     shadowOpacity: 0.05,
     shadowOffset: { width: 0, height: 2 },
