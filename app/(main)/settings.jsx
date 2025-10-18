@@ -19,6 +19,7 @@ import { moderateScale, scale, verticalScale } from "react-native-size-matters";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import verificationService from "../../features/verification/verificationService";
+import { settings_styles } from "../../assets/styles/settings_styles";
 
 
 export default function Settings() {
@@ -33,6 +34,7 @@ export default function Settings() {
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [hydrating, setHydrating] = useState(true);
+  
 
   // ✅ 1. Load user from AsyncStorage for fallback
   console.log("Redux User:", JSON.stringify(reduxUser, null, 2));
@@ -63,7 +65,7 @@ export default function Settings() {
     reduxUser && reduxUser.email ? reduxUser : localUser && localUser.email ? localUser : null;
 
   // ✅ 4. Derived display fields
-  const displayName = user?.name || "—";
+  const displayName = user?.username || "—";
   const displayEmail = user?.email || "—";
   const memberSince =
     user?.createdAt && !isNaN(new Date(user.createdAt))
@@ -94,34 +96,38 @@ export default function Settings() {
   };
 
   const handleEditProfile = async () => {
-    try {
-      setLoading(true);
-      const requests = await verificationService.getMyVerificationRequests();
-      const hasPending = requests.some((r) => r.status === "pending");
+  if (loading) return;
+  try {
+    setLoading(true);
 
-      if (hasPending) {
-        router.replace("/(setup)/pendingVerification");
-      } else if (!user?.verified || user.verified === "unverified") {
-        router.replace("/(setup)/startSetup");
-      } else {
-        Toast.show({
-          type: "info",
-          text1: "You’re already verified",
-          text2: "No verification needed.",
-        });
-      }
-    } catch (err) {
-      console.log("Error in handleEditProfile:", err);
-      Toast.show({
-        type: "error",
-        text1: "Error checking verification",
-        text2: err.message || "Please try again later.",
-      });
-    } finally {
-      setLoading(false);
+    const token = await AsyncStorage.getItem("token");
+    if (!token) {
+      Toast.show({ type: "error", text1: "Not authenticated", text2: "Please log in again." });
+      router.replace("/(auth)/login");
+      return;
     }
-  };
 
+    const res = await verificationService.getMyVerificationRequests();
+    const list = Array.isArray(res) ? res : (res?.data ?? []);
+    const hasPending = list.some(r => {
+      const s = String(r?.status ?? "").toLowerCase();
+      return s === "pending";
+    });
+
+    if (hasPending) {
+      router.replace("/(setup)/pendingVerification");
+    } else if (!user?.verified || String(user.verified).toLowerCase() === "unverified") {
+      router.replace("/(setup)/startSetup");
+    } else {
+      Toast.show({ type: "info", text1: "You’re already verified", text2: "No verification needed." });
+    }
+  } catch (err) {
+    console.log("Error in handleEditProfile:", err);
+    Toast.show({ type: "error", text1: "Error checking verification", text2: err.message || "Please try again later." });
+  } finally {
+    setLoading(false);
+  }
+};
   const menuItems = [
     { title: "Wallet Address", icon: "wallet-outline", action: () => router.replace("/subs/walletConnect") },
     { title: "Change Password", icon: "lock-closed-outline" },
@@ -133,7 +139,7 @@ export default function Settings() {
   // ✅ Loading state before hydration
   if (hydrating) {
     return (
-      <SafeAreaView style={[styles.safeArea, { justifyContent: "center", alignItems: "center" }]}>
+      <SafeAreaView style={[settings_styles.safeArea, { justifyContent: "center", alignItems: "center" }]}>
         <ActivityIndicator size="large" color="#1E5128" />
         <Text style={{ marginTop: 10, color: "#1E5128" }}>Loading user data...</Text>
       </SafeAreaView>
@@ -141,51 +147,51 @@ export default function Settings() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container}>
+    <SafeAreaView style={settings_styles.safeArea}>
+      <ScrollView contentContainerStyle={settings_styles.container}>
         {/* Profile Card */}
-        <View style={styles.profileCard}>
+        <View style={settings_styles.profileCard}>
           <Image
             source={{ uri: "https://cdn-icons-png.flaticon.com/512/4140/4140048.png" }}
-            style={styles.avatar}
+            style={settings_styles.avatar}
           />
-          <View style={styles.profileInfo}>
-            <Text style={styles.userName}>{displayName}</Text>
-            <Text style={styles.userEmail}>{displayEmail}</Text>
-            <Text style={styles.memberSince}>Member since {memberSince}</Text>
+          <View style={settings_styles.profileInfo}>
+            <Text style={settings_styles.userName}>{displayName}</Text>
+            <Text style={settings_styles.userEmail}>{displayEmail}</Text>
+            <Text style={settings_styles.memberSince}>Member since {memberSince}</Text>
           </View>
         </View>
 
         {/* Edit Profile */}
         <TouchableOpacity
-          style={styles.editProfileButton}
+          style={settings_styles.editProfileButton}
           onPress={handleEditProfile}
           disabled={loading}
         >
           {loading ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.editProfileText}>Edit Profile</Text>
+            <Text style={settings_styles.editProfileText}>Edit Profile</Text>
           )}
         </TouchableOpacity>
 
         {/* Menu */}
-        <View style={styles.menuSection}>
+        <View style={settings_styles.menuSection}>
           {menuItems.map((item, index) => (
-            <TouchableOpacity key={index} style={styles.menuItem} onPress={item.action}>
-              <View style={styles.menuLeft}>
+            <TouchableOpacity key={index} style={settings_styles.menuItem} onPress={item.action}>
+              <View style={settings_styles.menuLeft}>
                 <Ionicons name={item.icon} size={moderateScale(22)} color="#1E5128" />
-                <Text style={styles.menuText}>{item.title}</Text>
+                <Text style={settings_styles.menuText}>{item.title}</Text>
               </View>
               <Ionicons name="chevron-forward" size={moderateScale(20)} color="#888" />
             </TouchableOpacity>
           ))}
 
           {/* Biometrics */}
-          <View style={styles.menuItem}>
-            <View style={styles.menuLeft}>
+          <View style={settings_styles.menuItem}>
+            <View style={settings_styles.menuLeft}>
               <Ionicons name="finger-print-outline" size={moderateScale(22)} color="#1E5128" />
-              <Text style={styles.menuText}>Use Biometrics</Text>
+              <Text style={settings_styles.menuText}>Use Biometrics</Text>
             </View>
             <Switch
               value={biometricEnabled}
@@ -197,17 +203,17 @@ export default function Settings() {
         </View>
 
         {/* Contact */}
-        <View style={styles.contactCard}>
-          <View style={styles.iconText}>
+        <View style={settings_styles.contactCard}>
+          <View style={settings_styles.iconText}>
             <Ionicons
               name="mail-outline"
               size={moderateScale(22)}
               color="#1E5128"
               style={{ marginRight: scale(8) }}
             />
-            <Text style={styles.contactText}>Email us at:</Text>
+            <Text style={settings_styles.contactText}>Email us at:</Text>
           </View>
-          <Text style={styles.contactEmail}>psau_aas@ikswela.psau.edu.ph</Text>
+          <Text style={settings_styles.contactEmail}>psau_aas@ikswela.psau.edu.ph</Text>
         </View>
       </ScrollView>
 
@@ -218,24 +224,24 @@ export default function Settings() {
         animationType="fade"
         onRequestClose={() => setShowLogoutModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <Text style={styles.modalTitle}>Are you sure you want to logout?</Text>
-            <View style={styles.modalButtons}>
+        <View style={settings_styles.modalOverlay}>
+          <View style={settings_styles.modalContainer}>
+            <Text style={settings_styles.modalTitle}>Are you sure you want to logout?</Text>
+            <View style={settings_styles.modalButtons}>
               <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
+                style={[settings_styles.modalButton, settings_styles.cancelButton]}
                 onPress={() => setShowLogoutModal(false)}
               >
-                <Text style={styles.cancelText}>Cancel</Text>
+                <Text style={settings_styles.cancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalButton, styles.confirmButton]}
+                style={[settings_styles.modalButton, settings_styles.confirmButton]}
                 onPress={() => {
                   setShowLogoutModal(false);
                   handleLogout();
                 }}
               >
-                <Text style={styles.confirmText}>Confirm</Text>
+                <Text style={settings_styles.confirmText}>Confirm</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -245,171 +251,3 @@ export default function Settings() {
   );
 }
 
-/* styles unchanged from your snippet */
-
-
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#E8F5E9",
-  },
-  container: {
-    paddingHorizontal: scale(20),
-    paddingTop: verticalScale(50),
-    paddingBottom: verticalScale(40),
-  },
-  profileCard: {
-    backgroundColor: "#fff",
-    borderRadius: moderateScale(20),
-    flexDirection: "row",
-    alignItems: "center",
-    padding: scale(15),
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  avatar: {
-    width: moderateScale(60),
-    height: moderateScale(60),
-    borderRadius: moderateScale(30),
-    marginRight: scale(15),
-  },
-  profileInfo: {
-    flex: 1,
-  },
-  userName: {
-    fontSize: moderateScale(18),
-    fontWeight: "700",
-    color: "#1E5128",
-  },
-  userEmail: {
-    fontSize: moderateScale(14),
-    color: "#666",
-  },
-  memberSince: {
-    fontSize: moderateScale(12),
-    color: "#888",
-    marginTop: verticalScale(2),
-  },
-  editProfileButton: {
-    backgroundColor: "#1E5128",
-    borderRadius: moderateScale(25),
-    paddingVertical: verticalScale(10),
-    marginTop: verticalScale(15),
-    marginBottom: verticalScale(20),
-    alignItems: "center",
-  },
-  editProfileText: {
-    color: "#fff",
-    fontWeight: "600",
-    fontSize: moderateScale(15),
-  },
-  menuSection: {
-    backgroundColor: "#fff",
-    borderRadius: moderateScale(20),
-    paddingVertical: verticalScale(5),
-    paddingHorizontal: scale(10),
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  menuItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: verticalScale(15),
-    paddingHorizontal: scale(5),
-  },
-  menuLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  menuText: {
-    fontSize: moderateScale(15),
-    color: "#222",
-    marginLeft: scale(10),
-    fontWeight: "500",
-  },
-  contactCard: {
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "white",
-    borderRadius: moderateScale(20),
-    paddingVertical: verticalScale(15),
-    marginTop: verticalScale(10),
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  iconText: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: verticalScale(4),
-  },
-  contactText: {
-    color: "#1E5128",
-    fontSize: moderateScale(14),
-    fontWeight: "500",
-  },
-  contactEmail: {
-    color: "#1E5128",
-    fontSize: moderateScale(14),
-    fontWeight: "700",
-    textAlign: "center",
-  },
-
-  // --- Modal Styles ---
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.3)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalContainer: {
-    backgroundColor: "#fff",
-    width: "80%",
-    borderRadius: moderateScale(15),
-    padding: verticalScale(20),
-    alignItems: "center",
-  },
-  modalTitle: {
-    fontSize: moderateScale(15),
-    color: "#1E5128",
-    textAlign: "center",
-    fontWeight: "600",
-    marginBottom: verticalScale(15),
-  },
-  modalButtons: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    width: "100%",
-  },
-  modalButton: {
-    flex: 1,
-    paddingVertical: verticalScale(10),
-    borderRadius: moderateScale(10),
-    marginHorizontal: scale(5),
-    alignItems: "center",
-  },
-  cancelButton: {
-    backgroundColor: "#E0E0E0",
-  },
-  confirmButton: {
-    backgroundColor: "#1E5128",
-  },
-  cancelText: {
-    color: "#333",
-    fontWeight: "600",
-  },
-  confirmText: {
-    color: "#fff",
-    fontWeight: "600",
-  },
-});

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect,useRef } from "react";
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Alert,
   Switch,
+  
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -17,12 +18,18 @@ import { login, reset } from "../../features/auth/authSlice";
 import Toast from "react-native-toast-message";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as LocalAuthentication from "expo-local-authentication";
+import verificationService from "../../features/verification/verificationService";
+import { moderateScale } from "react-native-size-matters";
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [lastUsedCreds, setLastUsedCreds] = useState({ email: "", password: "" });
+
+  const handledPostLoginRef = useRef(false);   // <-- guard
+  const biometricPromptedRef = useRef(false);  // <-- guard biometric prompt too (optional)
 
   const dispatch = useDispatch();
   const router = useRouter();
@@ -40,105 +47,90 @@ export default function Login() {
   }, []);
 
   // --- Try automatic biometric login if enabled ---
-useEffect(() => {
-  const tryBiometricLogin = async () => {
-    if (!biometricEnabled) return;
+ useEffect(() => {
+    const tryBiometricLogin = async () => {
+      if (!biometricEnabled) return;
+      if (biometricPromptedRef.current) return;    // <-- prevent 2nd prompt in dev
+      biometricPromptedRef.current = true;
 
-    const savedEmail = await AsyncStorage.getItem("@saved_email");
-    const savedPassword = await AsyncStorage.getItem("@saved_password");
-    if (!savedEmail || !savedPassword) return;
+      const savedEmail = await AsyncStorage.getItem("@saved_email");
+      const savedPassword = await AsyncStorage.getItem("@saved_password");
+      if (!savedEmail || !savedPassword) return;
 
-    const hasHardware = await LocalAuthentication.hasHardwareAsync();
-    const supported = await LocalAuthentication.isEnrolledAsync();
-    if (!hasHardware || !supported) return;
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      const supported = await LocalAuthentication.isEnrolledAsync();
+      if (!hasHardware || !supported) return;
 
-    // Small delay to ensure UI is ready
-    setTimeout(() => {
-      Alert.alert(
-        "Login with Biometrics",
-        "Would you like to log in using your saved biometrics?",
-        [
-          { text: "No", style: "cancel" },
-          {
-            text: "Yes",
-            onPress: async () => {
-              const result = await LocalAuthentication.authenticateAsync({
-                promptMessage: "Authenticate to log in",
-              });
+      setTimeout(() => {
+        Alert.alert(
+          "Login with Biometrics",
+          "Would you like to log in using your saved biometrics?",
+          [
+            { text: "No", style: "cancel" },
+            {
+              text: "Yes",
+              onPress: async () => {
+                const result = await LocalAuthentication.authenticateAsync({
+                  promptMessage: "Authenticate to log in",
+                });
                 if (result.success) {
-                  Toast.show({
-                    type: "info",
-                    text1: "Logging in...",
-                    text2: "Authenticating with biometrics",
-                    visibilityTime: 30000, // long enough for API call
-                  });
-
+                  Toast.show({ type: "info", text1: "Logging in...", text2: "Authenticating with biometrics", visibilityTime: 30000 });
+                  setLastUsedCreds({ email: savedEmail, password: savedPassword });
                   dispatch(login({ email: savedEmail, password: savedPassword }));
                 } else {
-                  Toast.show({
-                    type: "error",
-                    text1: "Biometric authentication failed",
-                  });
+                  Toast.show({ type: "error", text1: "Biometric authentication failed" });
                 }
-
+              },
             },
-          },
-        ]
-      );
-    }, 500); // Wait 0.5s to ensure screen is visible
-  };
+          ]
+        );
+      }, 1000);
+    };
 
-  tryBiometricLogin();
-}, [biometricEnabled]);
+    tryBiometricLogin();
+  }, [biometricEnabled]);
 
   // --- Post-login flow ---
-  useEffect(() => {
+ useEffect(() => {
     const handlePostLogin = async () => {
+      if (handledPostLoginRef.current) return;   // <-- guard
       if (isError) {
-        Toast.show({
-          type: "error",
-          text1: "Login Failed",
-          text2: message || "Invalid credentials",
-        });
+        handledPostLoginRef.current = true;      // mark handled
+        Toast.show({ type: "error", text1: "Login Failed", text2: message || "Invalid credentials" });
         dispatch(reset());
         return;
       }
 
       if (isSuccess || user) {
-        Toast.show({
-          type: "success",
-          text1: "Login Successful",
-          text2: "Redirecting...",
-        });
+        handledPostLoginRef.current = true;      // mark handled
+        Toast.show({ type: "success", text1: "Login Successful", text2: "Redirecting..." });
 
-        // ✅ Save credentials if biometrics ON
+        // Save/clear biometrics
         const biometricsChoice = await AsyncStorage.getItem("@biometric_pref");
         if (biometricsChoice === "true") {
-          await AsyncStorage.setItem("@saved_email", email);
-          await AsyncStorage.setItem("@saved_password", password);
+          await AsyncStorage.setItem("@saved_email", lastUsedCreds.email || "");
+          await AsyncStorage.setItem("@saved_password", lastUsedCreds.password || "");
         } else {
           await AsyncStorage.removeItem("@saved_email");
           await AsyncStorage.removeItem("@saved_password");
         }
 
-        // ✅ Fetch user's verification requests
+        // Check verification (normalize response)
         try {
-          const requests = await verificationService.getMyVerificationRequests();
-          const hasPending = requests.some((r) => r.status === "pending");
+          const res = await verificationService.getMyVerificationRequests();
+          const list = Array.isArray(res) ? res : (res?.data ?? []);
+          const hasPending = list.some(r => String(r?.status ?? "").toLowerCase() === "pending");
 
           if (hasPending) {
-            // Already has a pending verification → go to waiting screen
             router.replace("/(setup)/pendingVerification");
-          } else if (user?.verified === "unverified") {
-            // No pending → needs to start setup
+          } else if (String(user?.verified ?? "unverified").toLowerCase() === "unverified") {
             router.replace("/(setup)/startSetup");
           } else {
-            // Verified → go to home
             router.replace("/(main)/home");
           }
         } catch (err) {
           console.log("Error checking verification:", err);
-          router.replace("/(main)/home"); // fallback
+          router.replace("/(main)/home");
         }
 
         dispatch(reset());
@@ -146,10 +138,11 @@ useEffect(() => {
     };
 
     handlePostLogin();
-  }, [user, isError, isSuccess, message, dispatch]);
+  }, [user, isError, isSuccess, message, dispatch, router, lastUsedCreds]);
 
   // --- Manual login handler ---
   const handleLogin = () => {
+    setLastUsedCreds({ email, password });
     if (!email || !password) {
       Alert.alert("Error", "Please fill in all fields");
       return;
@@ -214,6 +207,7 @@ useEffect(() => {
         {/* 🔒 Biometric toggle below button */}
 
           <View style={login_styles.biometrics}>
+          <Ionicons name="finger-print-outline" size={moderateScale(22)} color="#1E5128" />
           <Text style={login_styles.biometrics_text}>Use Biometrics</Text>
           <TouchableOpacity
             onPress={async () => {
