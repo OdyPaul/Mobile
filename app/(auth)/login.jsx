@@ -1,16 +1,8 @@
-import React, { useState, useEffect,useRef } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  Alert,
-  Switch,
-  
-} from "react-native";
+import React, { useState, useEffect, useRef } from "react";
+import { View, Text, TextInput, TouchableOpacity, Alert } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { s, vs, ms } from "react-native-size-matters";
+import { s, vs, ms, moderateScale } from "react-native-size-matters";
 import LoginLogo from "../../assets/images/login_logo";
 import { login_styles } from "../../assets/styles/login_styles";
 import { useDispatch, useSelector } from "react-redux";
@@ -19,42 +11,35 @@ import Toast from "react-native-toast-message";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as LocalAuthentication from "expo-local-authentication";
 import verificationService from "../../features/verification/verificationService";
-import { moderateScale } from "react-native-size-matters";
+import useBiometricPref from "../../hooks/useBiometricPref";
+import { normalizeVerificationList, hasPending, STORAGE_KEYS } from "../../lib";
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [lastUsedCreds, setLastUsedCreds] = useState({ email: "", password: "" });
 
-  const handledPostLoginRef = useRef(false);   // <-- guard
-  const biometricPromptedRef = useRef(false);  // <-- guard biometric prompt too (optional)
+  // Reuse biometric hook
+  const { enabled: biometricEnabled, toggle: setBiometricPref } = useBiometricPref();
+
+  // Guards
+  const navigatedRef = useRef(false);          // prevent double navigation on success
+  const biometricPromptedRef = useRef(false);  // prevent double biometric prompt in dev
 
   const dispatch = useDispatch();
   const router = useRouter();
-  const { user, isError, isSuccess, message } = useSelector(
-    (state) => state.auth
-  );
-
-  // --- Check if biometrics is enabled ---
-  useEffect(() => {
-    const checkBiometrics = async () => {
-      const pref = await AsyncStorage.getItem("@biometric_pref");
-      setBiometricEnabled(pref === "true");
-    };
-    checkBiometrics();
-  }, []);
+  const { user, isError, isSuccess, message } = useSelector((s) => s.auth);
 
   // --- Try automatic biometric login if enabled ---
- useEffect(() => {
+  useEffect(() => {
     const tryBiometricLogin = async () => {
       if (!biometricEnabled) return;
-      if (biometricPromptedRef.current) return;    // <-- prevent 2nd prompt in dev
+      if (biometricPromptedRef.current) return; // React 18 StrictMode guard
       biometricPromptedRef.current = true;
 
-      const savedEmail = await AsyncStorage.getItem("@saved_email");
-      const savedPassword = await AsyncStorage.getItem("@saved_password");
+      const savedEmail = await AsyncStorage.getItem(STORAGE_KEYS.SAVED_EMAIL);
+      const savedPassword = await AsyncStorage.getItem(STORAGE_KEYS.SAVED_PASSWORD);
       if (!savedEmail || !savedPassword) return;
 
       const hasHardware = await LocalAuthentication.hasHardwareAsync();
@@ -74,7 +59,12 @@ export default function Login() {
                   promptMessage: "Authenticate to log in",
                 });
                 if (result.success) {
-                  Toast.show({ type: "info", text1: "Logging in...", text2: "Authenticating with biometrics", visibilityTime: 30000 });
+                  Toast.show({
+                    type: "info",
+                    text1: "Logging in...",
+                    text2: "Authenticating with biometrics",
+                    visibilityTime: 30000,
+                  });
                   setLastUsedCreds({ email: savedEmail, password: savedPassword });
                   dispatch(login({ email: savedEmail, password: savedPassword }));
                 } else {
@@ -84,52 +74,76 @@ export default function Login() {
             },
           ]
         );
-      }, 1000);
+      }, 800);
     };
 
     tryBiometricLogin();
-  }, [biometricEnabled]);
+  }, [biometricEnabled, dispatch]);
 
   // --- Post-login flow ---
- useEffect(() => {
+  useEffect(() => {
+    const ensureToken = async () => {
+      // token could be in user or persisted:
+      let token = user?.token || (await AsyncStorage.getItem(STORAGE_KEYS.TOKEN));
+      if (token) return token;
+      // retry a bit to avoid a race with persistence
+      for (let i = 0; i < 3; i++) {
+        await new Promise((r) => setTimeout(r, 150));
+        token = user?.token || (await AsyncStorage.getItem(STORAGE_KEYS.TOKEN));
+        if (token) return token;
+      }
+      return null;
+    };
+
     const handlePostLogin = async () => {
-      if (handledPostLoginRef.current) return;   // <-- guard
       if (isError) {
-        handledPostLoginRef.current = true;      // mark handled
+        // Do NOT set the nav guard here; allow retry to navigate later
         Toast.show({ type: "error", text1: "Login Failed", text2: message || "Invalid credentials" });
         dispatch(reset());
         return;
       }
 
-      if (isSuccess || user) {
-        handledPostLoginRef.current = true;      // mark handled
+      if ((isSuccess || user) && !navigatedRef.current) {
+        navigatedRef.current = true; // only guard when we’re going to navigate
         Toast.show({ type: "success", text1: "Login Successful", text2: "Redirecting..." });
 
-        // Save/clear biometrics
-        const biometricsChoice = await AsyncStorage.getItem("@biometric_pref");
-        if (biometricsChoice === "true") {
-          await AsyncStorage.setItem("@saved_email", lastUsedCreds.email || "");
-          await AsyncStorage.setItem("@saved_password", lastUsedCreds.password || "");
+        // Save/clear biometric creds
+        const pref = await AsyncStorage.getItem(STORAGE_KEYS.BIOMETRIC_PREF);
+        if (pref === "true") {
+          await AsyncStorage.multiSet([
+            [STORAGE_KEYS.SAVED_EMAIL, lastUsedCreds.email || ""],
+            [STORAGE_KEYS.SAVED_PASSWORD, lastUsedCreds.password || ""],
+          ]);
         } else {
-          await AsyncStorage.removeItem("@saved_email");
-          await AsyncStorage.removeItem("@saved_password");
+          await AsyncStorage.multiRemove([STORAGE_KEYS.SAVED_EMAIL, STORAGE_KEYS.SAVED_PASSWORD]);
         }
 
-        // Check verification (normalize response)
+        // Check verification (normalize + robust)
         try {
-          const res = await verificationService.getMyVerificationRequests();
-          const list = Array.isArray(res) ? res : (res?.data ?? []);
-          const hasPending = list.some(r => String(r?.status ?? "").toLowerCase() === "pending");
+          const token = await ensureToken();
+          if (!token) {
+            router.replace("/(main)/home");
+            dispatch(reset());
+            return;
+          }
 
-          if (hasPending) {
-            router.replace("/(setup)/pendingVerification");
-          } else if (String(user?.verified ?? "unverified").toLowerCase() === "unverified") {
+          const res = await verificationService.getMyVerificationRequests();
+          const list = normalizeVerificationList(res);
+          const pending = hasPending(list);
+          const isUnverified = String(user?.verified ?? "unverified").toLowerCase() === "unverified";
+
+          if (pending) {
+            // If already has a pending request, do NOT show pending screen on login
+            router.replace("/(main)/home");
+          } else if (isUnverified) {
+            // No pending yet but user is unverified → start setup
             router.replace("/(setup)/startSetup");
           } else {
+            // Verified → home
             router.replace("/(main)/home");
           }
         } catch (err) {
-          console.log("Error checking verification:", err);
+          // On any error, just go home
           router.replace("/(main)/home");
         }
 
@@ -147,17 +161,9 @@ export default function Login() {
       Alert.alert("Error", "Please fill in all fields");
       return;
     }
-
-    Toast.show({
-      type: "info",
-      text1: "Logging in...",
-      text2: "Please wait",
-      visibilityTime: 30000,
-    });
-
+    Toast.show({ type: "info", text1: "Logging in...", text2: "Please wait", visibilityTime: 30000 });
     dispatch(login({ email, password }));
   };
-
 
   return (
     <View style={login_styles.container}>
@@ -168,7 +174,7 @@ export default function Login() {
 
       {/* Form */}
       <View style={login_styles.formCard}>
-        {/* Email Field */}
+        {/* Email */}
         <View style={login_styles.inputWrapper}>
           <Ionicons name="mail-outline" size={ms(18)} color="#8E8E8E" />
           <TextInput
@@ -182,7 +188,7 @@ export default function Login() {
           />
         </View>
 
-        {/* Password Field */}
+        {/* Password */}
         <View style={login_styles.inputWrapper}>
           <Ionicons name="lock-closed-outline" size={ms(18)} color="#8E8E8E" />
           <TextInput
@@ -193,28 +199,17 @@ export default function Login() {
             value={password}
             onChangeText={setPassword}
           />
-          <TouchableOpacity
-            onPress={() => setShowPassword(!showPassword)}
-            activeOpacity={0.7}
-          >
-            <Ionicons
-              name={showPassword ? "eye-outline" : "eye-off-outline"}
-              size={ms(18)}
-              color="#8E8E8E"
-            />
+          <TouchableOpacity onPress={() => setShowPassword(!showPassword)} activeOpacity={0.7}>
+            <Ionicons name={showPassword ? "eye-outline" : "eye-off-outline"} size={ms(18)} color="#8E8E8E" />
           </TouchableOpacity>
         </View>
-        {/* 🔒 Biometric toggle below button */}
 
-          <View style={login_styles.biometrics}>
+        {/* Biometrics toggle (uses hook state) */}
+        <View style={login_styles.biometrics}>
           <Ionicons name="finger-print-outline" size={moderateScale(22)} color="#1E5128" />
           <Text style={login_styles.biometrics_text}>Use Biometrics</Text>
           <TouchableOpacity
-            onPress={async () => {
-              const newPref = !biometricEnabled;
-              setBiometricEnabled(newPref);
-              await AsyncStorage.setItem("@biometric_pref", newPref ? "true" : "false");
-            }}
+            onPress={() => setBiometricPref(!biometricEnabled)}
             style={{
               width: 50,
               height: 25,
@@ -236,24 +231,15 @@ export default function Login() {
           </TouchableOpacity>
         </View>
 
-        {/* Login Button */}
-        <TouchableOpacity
-          style={login_styles.loginButton}
-          onPress={handleLogin}
-          activeOpacity={0.8}
-        >
+        {/* Login */}
+        <TouchableOpacity style={login_styles.loginButton} onPress={handleLogin} activeOpacity={0.8}>
           <Text style={login_styles.loginText}>Login</Text>
         </TouchableOpacity>
-
-
 
         {/* Footer */}
         <Text style={login_styles.footerText}>
           Don’t have an account?{" "}
-          <Text
-            style={login_styles.signUpText}
-            onPress={() => router.push("/register")}
-          >
+          <Text style={login_styles.signUpText} onPress={() => router.push("/register")}>
             Sign Up
           </Text>
         </Text>

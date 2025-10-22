@@ -83,8 +83,7 @@ const updateDID = async (walletAddress) => {
 // LOGOUT
 // -----------------------------------------------------------------------------
 const logout = async () => {
-  await AsyncStorage.removeItem("user");
-  await AsyncStorage.removeItem("token");
+await AsyncStorage.multiRemove(["user", "token", "walletSession"]);
 };
 
 // -----------------------------------------------------------------------------

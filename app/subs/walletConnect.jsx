@@ -2,78 +2,51 @@
 import "../../polyfills";
 import React, { useState, useEffect } from "react";
 import {
-  View,
-  Text,
-  Button,
-  StyleSheet,
-  TouchableOpacity,
-  ActivityIndicator,
-  Alert,
-  TextInput,
+  View, Text, Button, TouchableOpacity, ActivityIndicator, Alert, TextInput
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import {
-  WalletConnectModal,
-  useWalletConnectModal,
-} from "@walletconnect/modal-react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useDispatch, useSelector } from "react-redux";
-import { updateDID } from "../../features/auth/authSlice";
+import { useSelector } from "react-redux";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { isAddress, getAddress } from "ethers";
 import { walletConnect_styles } from "../../assets/styles/walletConnect_styles";
-const projectId = "2909466446bb37af0f229b405872de47";
-
-const providerMetadata = {
-  name: "WalletMobile",
-  description: "DID connection for verification",
-  url: "https://example.com",
-  icons: ["https://walletconnect.com/walletconnect-logo.png"],
-  redirect: { native: "mobile://" },
-};
+import useWalletConnector from "../../hooks/useWalletConnector";
 
 export default function ConnectWalletScreen() {
   const router = useRouter();
   const { from } = useLocalSearchParams();
   const cameFromSetup = String(from || "") === "setup";
-  const dispatch = useDispatch();
   const user = useSelector((state) => state.auth.user);
 
-  const { open, close, isConnected, address, provider } = useWalletConnectModal({
-    projectId,
-    providerMetadata,
-  });
+  const {
+    open, isConnected, address,
+    saveSessionAndDid, disconnectAndClear,
+  } = useWalletConnector();
 
   const [loading, setLoading] = useState(false);
   const [savedAddress, setSavedAddress] = useState(null);
   const [didInput, setDidInput] = useState("");
 
-  // 🧩 1. Handle if user already has DID
   useEffect(() => {
     if (user?.did) {
-      // Auto-display the saved DID as connected wallet
       const clean = user.did.replace("did:polygon:", "");
       setSavedAddress(clean);
     }
   }, [user]);
 
-  // 🧩 2. Auto-save connected wallet (only if no DID yet)
-    useEffect(() => {
-      const saveIfConnected = async () => {
-        try {
-          if (isConnected && address && !user?.did) {
-            const checksum = getAddress(address);
-            await AsyncStorage.setItem("walletSession", JSON.stringify({ address: checksum }));
-            setSavedAddress(checksum);
-            await dispatch(updateDID(checksum)).unwrap();
-          }
-        } catch (e) {
-          console.error("Auto-save checksum error:", e);
+  useEffect(() => {
+    const saveIfConnected = async () => {
+      try {
+        if (isConnected && address && !user?.did) {
+          const checksum = await saveSessionAndDid(address);
+          setSavedAddress(checksum);
         }
-      };
-      saveIfConnected();
-    }, [isConnected, address, user]);
-
+      } catch (e) {
+        console.error("Auto-save checksum error:", e);
+      }
+    };
+    saveIfConnected();
+  }, [isConnected, address, user, saveSessionAndDid]);
 
   const connectWallet = async () => {
     if (user?.did) {
@@ -99,11 +72,8 @@ export default function ConnectWalletScreen() {
         onPress: async () => {
           try {
             setLoading(true);
-            await AsyncStorage.removeItem("walletSession");
+            await disconnectAndClear();
             setSavedAddress(null);
-            await dispatch(updateDID(null)).unwrap();
-            if (provider?.disconnect) await provider.disconnect();
-            await close();
             Alert.alert("✅ Wallet Disconnected", "Your wallet has been unlinked.", [
               { text: "OK", onPress: () => router.push("/(main)/settings") },
             ]);
@@ -146,9 +116,8 @@ export default function ConnectWalletScreen() {
           text: "Save",
           onPress: async () => {
             try {
-              await AsyncStorage.setItem("walletSession", JSON.stringify({ address: checksum }));
+              await saveSessionAndDid(checksum);
               setSavedAddress(checksum);
-              await dispatch(updateDID(checksum)).unwrap();
               Alert.alert("✅ Saved", "Your wallet has been saved.");
             } catch (err) {
               console.error("Error saving DID:", err);
@@ -177,7 +146,6 @@ export default function ConnectWalletScreen() {
       {loading ? (
         <ActivityIndicator size="large" color="#007bff" />
       ) : user?.did ? (
-        // 🧩 3. If user DID exists, only show "Connected" + allow Disconnect
         <>
           <Text style={walletConnect_styles.addr}>Linked DID:</Text>
           <Text style={walletConnect_styles.addressValue}>{user.did}</Text>
@@ -211,8 +179,8 @@ export default function ConnectWalletScreen() {
         </TouchableOpacity>
       )}
 
-      <WalletConnectModal projectId={projectId} providerMetadata={providerMetadata} />
+      {/* ❌ Remove: modal is already mounted globally in _layout.jsx */}
+      {/* <WalletConnectModal projectId={PROJECT_ID} providerMetadata={PROVIDER_METADATA} /> */}
     </View>
   );
 }
-
