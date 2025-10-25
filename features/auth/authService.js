@@ -86,6 +86,15 @@ const logout = async () => {
 await AsyncStorage.multiRemove(["user", "token", "walletSession"]);
 };
 
+
+const requestEmailOtp = async (email) => {
+  const { data } = await axios.post(`${API_URL}/api/mobile/otp/request`, { email });
+  return data; // { success: true }
+};
+const verifyEmailOtp = async (email, code) => {
+  const { data } = await axios.post(`${API_URL}/api/mobile/otp/verify`, { email, code });
+  return data; // { success: true, otpSession }
+};
 // -----------------------------------------------------------------------------
 // EXPORT
 // -----------------------------------------------------------------------------
@@ -94,4 +103,6 @@ export default {
   login,
   updateDID,
   logout,
+   requestEmailOtp,
+  verifyEmailOtp,
 };

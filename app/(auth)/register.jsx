@@ -1,87 +1,96 @@
 import React, { useState } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-} from "react-native";
+import { View, Text, TextInput, TouchableOpacity, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { s, vs } from "react-native-size-matters";
 import { SafeAreaView } from "react-native-safe-area-context";
-import AppLogo from "../../assets/images/app_logo"; 
-import {register_styles}  from "../../assets/styles/register_styles";
+import AppLogo from "../../assets/images/app_logo";
+import { register_styles } from "../../assets/styles/register_styles";
+import authService from "../../features/auth/authService";
 
 export default function Register() {
   const router = useRouter();
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
   const [passwordVisible, setPasswordVisible] = useState(false);
+  const [password, setPassword] = useState("");
+  const [sendingOtp, setSendingOtp] = useState(false);
+
+  const continueToVerify = async () => {
+    if (!fullName.trim() || !email.trim() || !password) {
+      Alert.alert("Missing info", "Please fill in all fields.");
+      return;
+    }
+    try {
+      setSendingOtp(true);
+      await authService.requestEmailOtp(email.trim());
+      // -> go to verify screen carrying the pending registration payload
+      router.replace({
+        pathname: "/verify_email",
+        params: {
+          email: email.trim(),
+          username: fullName.trim(),
+          password,
+        },
+      });
+    } catch (e) {
+      Alert.alert("Failed to send OTP", e?.response?.data?.message || e?.message || "Try again.");
+    } finally {
+      setSendingOtp(false);
+    }
+  };
 
   return (
     <SafeAreaView style={register_styles.container}>
       <View style={register_styles.card}>
-        {/* Logo + Title */}
         <View style={register_styles.headerRow}>
           <Text style={register_styles.title}>AAS</Text>
           <AppLogo width={s(60)} height={vs(60)} />
         </View>
         <Text style={register_styles.subtitle}>Credential Wallet</Text>
 
-        {/* Input Fields */}
+        {/* Name */}
         <View style={register_styles.inputContainer}>
-          <Ionicons
-            name="person-outline"
-            size={20}
-            color="#6b7280"
-            style={register_styles.icon}
-          />
-          <TextInput placeholder="Full Name" style={register_styles.input} />
+          <Ionicons name="person-outline" size={20} color="#6b7280" style={register_styles.icon} />
+          <TextInput placeholder="Full Name" value={fullName} onChangeText={setFullName} style={register_styles.input} />
         </View>
 
-        <View style={register_styles.inputContainer}>
-          <Ionicons
-            name="mail-outline"
-            size={20}
-            color="#6b7280"
-            style={register_styles.icon}
-          />
+        {/* Email */}
+        <View style={[register_styles.inputContainer, { alignItems: "center" }]}>
+          <Ionicons name="mail-outline" size={20} color="#6b7280" style={register_styles.icon} />
           <TextInput
             placeholder="Email"
             keyboardType="email-address"
-            style={register_styles.input}
+            autoCapitalize="none"
+            value={email}
+            onChangeText={setEmail}
+            style={[register_styles.input, { flex: 1 }]}
           />
         </View>
 
-        {/* Password Field with Eye Toggle */}
+        {/* Password */}
         <View style={register_styles.inputContainer}>
-          <Ionicons
-            name="lock-closed-outline"
-            size={20}
-            color="#6b7280"
-            style={register_styles.icon}
-          />
+          <Ionicons name="lock-closed-outline" size={20} color="#6b7280" style={register_styles.icon} />
           <TextInput
             placeholder="Password"
             secureTextEntry={!passwordVisible}
+            value={password}
+            onChangeText={setPassword}
             style={register_styles.input}
           />
-          <TouchableOpacity
-            onPress={() => setPasswordVisible(!passwordVisible)}
-            style={register_styles.eyeIcon}
-          >
-            <Ionicons
-              name={passwordVisible ? "eye-outline" : "eye-off-outline"}
-              size={22}
-              color="#6b7280"
-            />
+          <TouchableOpacity onPress={() => setPasswordVisible(!passwordVisible)} style={register_styles.eyeIcon}>
+            <Ionicons name={passwordVisible ? "eye-outline" : "eye-off-outline"} size={22} color="#6b7280" />
           </TouchableOpacity>
         </View>
 
-        {/* Sign Up Button */}
-        <TouchableOpacity style={register_styles.button}>
-          <Text style={register_styles.buttonText}>Sign Up</Text>
+        <TouchableOpacity
+          style={[register_styles.button, { opacity: sendingOtp ? 0.6 : 1, marginTop: vs(10) }]}
+          onPress={continueToVerify}
+          disabled={sendingOtp}
+        >
+          <Text style={register_styles.buttonText}>{sendingOtp ? "Sending OTP..." : "Continue"}</Text>
         </TouchableOpacity>
 
-        {/* Login Link */}
         <View style={register_styles.footer}>
           <Text style={register_styles.footerText}>Already have an account? </Text>
           <TouchableOpacity onPress={() => router.push("/login")}>
@@ -92,4 +101,3 @@ export default function Register() {
     </SafeAreaView>
   );
 }
-

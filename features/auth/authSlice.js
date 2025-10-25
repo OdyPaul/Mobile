@@ -2,30 +2,16 @@ import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import authService from "./authService";
 
-// -----------------------------------------------------------------------------
-// Helper: Load flat user from storage
-// -----------------------------------------------------------------------------
-let initialUser = null;
-(async () => {
-  const storedUser = await AsyncStorage.getItem("user");
-  if (storedUser) initialUser = JSON.parse(storedUser);
-})();
+// --- Hydrate from storage on app start ---
+export const hydrateAuth = createAsyncThunk("auth/hydrate", async () => {
+  const stored = await AsyncStorage.getItem("user");
+  return stored ? JSON.parse(stored) : null;
+});
 
-const initialState = {
-  user: initialUser, // flat user: { _id, name, email, did, verified, token }
-  isError: false,
-  isSuccess: false,
-  isLoading: false,
-  message: "",
-};
-
-// -----------------------------------------------------------------------------
-// Register User
-// -----------------------------------------------------------------------------
+// --- Register ---
 export const register = createAsyncThunk("auth/register", async (user, thunkAPI) => {
   try {
-    const data = await authService.register(user);
-    // data is already flat: { _id, email, name, did, verified, token }
+    const data = await authService.register(user); // expects { username, email, password, otpSession }
     await AsyncStorage.setItem("user", JSON.stringify(data));
     return data;
   } catch (error) {
@@ -34,9 +20,7 @@ export const register = createAsyncThunk("auth/register", async (user, thunkAPI)
   }
 });
 
-// -----------------------------------------------------------------------------
-// Login User
-// -----------------------------------------------------------------------------
+// --- Login ---
 export const login = createAsyncThunk("auth/login", async (user, thunkAPI) => {
   try {
     const data = await authService.login(user);
@@ -48,9 +32,7 @@ export const login = createAsyncThunk("auth/login", async (user, thunkAPI) => {
   }
 });
 
-// -----------------------------------------------------------------------------
-// Update DID
-// -----------------------------------------------------------------------------
+// --- Update DID ---
 export const updateDID = createAsyncThunk("auth/updateDID", async (did, thunkAPI) => {
   try {
     const data = await authService.updateDID(did);
@@ -62,42 +44,36 @@ export const updateDID = createAsyncThunk("auth/updateDID", async (did, thunkAPI
   }
 });
 
-// -----------------------------------------------------------------------------
-// Logout
-// -----------------------------------------------------------------------------
+// --- Logout ---
 export const logout = createAsyncThunk("auth/logout", async () => {
   try {
-    // Keep biometric preference & saved credentials
     const biometrics = await AsyncStorage.getItem("@biometric_pref");
     const savedEmail = await AsyncStorage.getItem("@saved_email");
     const savedPassword = await AsyncStorage.getItem("@saved_password");
 
-    // Remove only the keys related to user auth
     await AsyncStorage.multiRemove(["user", "token"]);
+    await authService.logout();
 
-    // Restore biometric settings and saved creds
-    if (biometrics !== null) {
-      await AsyncStorage.setItem("@biometric_pref", biometrics);
-    }
+    if (biometrics !== null) await AsyncStorage.setItem("@biometric_pref", biometrics);
     if (savedEmail && savedPassword) {
       await AsyncStorage.setItem("@saved_email", savedEmail);
       await AsyncStorage.setItem("@saved_password", savedPassword);
     }
 
-    // Optional: call API logout if needed
-    await authService.logout();
-
     return null;
-  } catch (error) {
-    console.log("Logout error:", error);
+  } catch {
     return null;
   }
 });
 
+const initialState = {
+  user: null,
+  isError: false,
+  isSuccess: false,
+  isLoading: false,
+  message: "",
+};
 
-// -----------------------------------------------------------------------------
-// Slice
-// -----------------------------------------------------------------------------
 export const authSlice = createSlice({
   name: "auth",
   initialState,
@@ -111,6 +87,14 @@ export const authSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
+      // Hydrate
+      .addCase(hydrateAuth.pending, (state) => { state.isLoading = true; })
+      .addCase(hydrateAuth.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.user = action.payload;
+      })
+      .addCase(hydrateAuth.rejected, (state) => { state.isLoading = false; })
+
       // Register
       .addCase(register.pending, (state) => { state.isLoading = true; })
       .addCase(register.fulfilled, (state, action) => {
