@@ -9,17 +9,22 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app uses the camera to detect faces."
+      }
     },
     "android": {
+      "permissions": [
+        "CAMERA",
+        "android.permission.CAMERA"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
-        
       },
-      
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.psau.credpocket"
@@ -42,8 +47,20 @@
           }
         }
       ],
-      "expo-font"
-     
+      "expo-font",
+      "./app.plugin.js",
+      "react-native-vision-camera",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 34,
+            "minSdkVersion": 26,
+            "kotlinVersion": "2.1.20"
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
@@ -52,8 +69,15 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "60a8ec16-0cb7-4409-83aa-1dc9968f66c6"
+        "projectId": "162f670f-47a3-4f84-a195-8af487fbb2c6"
       }
-    }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/60a8ec16-0cb7-4409-83aa-1dc9968f66c6"
+    },
+    "owner": "nalah1234"
   }
 }
