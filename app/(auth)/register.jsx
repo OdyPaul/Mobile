@@ -44,7 +44,7 @@ export default function Register() {
     <SafeAreaView style={register_styles.container}>
       <View style={register_styles.card}>
         <View style={register_styles.headerRow}>
-          <Text style={register_styles.title}>AAS</Text>
+          <Text style={register_styles.title}>PocketCred</Text>
           <AppLogo width={s(60)} height={vs(60)} />
         </View>
         <Text style={register_styles.subtitle}>Credential Wallet</Text>

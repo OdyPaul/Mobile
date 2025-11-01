@@ -116,7 +116,7 @@ export default function Settings() {
             <Ionicons name="mail-outline" size={moderateScale(22)} color="#1E5128" style={{ marginRight: scale(8) }} />
             <Text style={s.contactText}>Email us at:</Text>
           </View>
-          <Text style={s.contactEmail}>psau_aas@ikswela.psau.edu.ph</Text>
+          <Text style={s.contactEmail}>pocketcred_psau@ikswela.psau.edu.ph</Text>
         </View>
       </ScrollView>
 

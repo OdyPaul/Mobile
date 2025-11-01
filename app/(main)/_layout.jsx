@@ -1,5 +1,9 @@
-import { Tabs } from "expo-router";
+// app/MainLayout.jsx (or app/_layout.jsx)
+// Copy–paste this whole file content for Step 2.
+
+import { Tabs, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Platform,
   View,
@@ -9,16 +13,20 @@ import {
   Dimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useEffect, useRef, useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import * as NavigationBar from "expo-navigation-bar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+// 👇 add this import (adjust the path if needed)
+import Scan from "../.././assets/components/scan"; // if this file is app/_layout.jsx, this path is correct
+
 export default function MainLayout() {
   const insets = useSafeAreaInsets();
   const [isShareOpen, setIsShareOpen] = useState(false);
+  const [isScanning, setIsScanning] = useState(false); // 👈 NEW
   const slideAnim = useRef(new Animated.Value(0)).current;
   const screenHeight = Dimensions.get("window").height;
+  const router = useRouter(); // 👈 NEW
 
   // 🟢 Navigation bar styling
   useEffect(() => {
@@ -141,6 +149,10 @@ export default function MainLayout() {
               alignItems: "center",
               justifyContent: "center",
             }}
+            onPress={() => {
+              setIsShareOpen(false);
+              setIsScanning(true); // 👈 open scanner overlay
+            }}
           >
             <Ionicons
               name="cloud-download-outline"
@@ -248,6 +260,27 @@ export default function MainLayout() {
           color="#fff"
         />
       </TouchableOpacity>
+
+      {/* 🔵 Scanner Overlay (full-screen) */}
+      {isScanning && (
+        <View
+          style={{
+            position: "absolute",
+            top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: "#000",
+            zIndex: 99,
+          }}
+        >
+          <Scan
+            onCancel={() => setIsScanning(false)}
+            onComplete={(vc) => {
+              setIsScanning(false);
+              // Navigate to your existing subs page:
+              router.replace(`/subs/vc/detail?id=${encodeURIComponent(vc.id)}`);
+            }}
+          />
+        </View>
+      )}
     </>
   );
 }
