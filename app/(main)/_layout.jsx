@@ -15,8 +15,8 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import * as NavigationBar from "expo-navigation-bar";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 
+import { clearWalletConnectCache } from "../../hooks/clearWalletConnectCache"; 
 // 👇 add this import (adjust the path if needed)
 import Scan from "../.././assets/components/scan"; // if this file is app/_layout.jsx, this path is correct
 
@@ -35,17 +35,11 @@ export default function MainLayout() {
   }, []);
 
   // 🧹 Clear wallet connect session on startup
-  useEffect(() => {
-    const clearStartupState = async () => {
-      try {
-        await AsyncStorage.removeItem("walletconnect");
-        console.log("🧹 Cleared WalletConnect session on app startup");
-      } catch (err) {
-        console.warn("WalletConnect cache clear error:", err);
-      }
-    };
-    clearStartupState();
-  }, []);
+useEffect(() => {
+  (async () => {
+    await clearWalletConnectCache();
+  })();
+}, []);
 
   // 🧩 Share panel animation
   useEffect(() => {
@@ -273,11 +267,11 @@ export default function MainLayout() {
         >
           <Scan
             onCancel={() => setIsScanning(false)}
-            onComplete={(vc) => {
-              setIsScanning(false);
-              // Navigate to your existing subs page:
-              router.replace(`/subs/vc/detail?id=${encodeURIComponent(vc.id)}`);
-            }}
+             onComplete={(vc) => {
+               setIsScanning(false);
+               // keep history so back works:
+               router.push(`/subs/vc/detail?id=${encodeURIComponent(vc.id)}`);
+             }}
           />
         </View>
       )}

@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { readVC } from "../../../lib/vcStorage";
@@ -19,6 +20,7 @@ export default function VcDetail() {
   const { id } = useLocalSearchParams();
   const [vc, setVc] = useState(null);
   const router = useRouter();
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
@@ -43,11 +45,12 @@ export default function VcDetail() {
   }, [vc?.jws]);
 
   const goBack = () => {
-    try {
-      // prefer real back if we navigated here from within the app
-      router.back();
-    } catch {
-      router.replace("/vc");
+    // If there's something to pop, do it; otherwise, send the user to the VC tab.
+    if (navigation?.canGoBack?.()) {
+      navigation.goBack();
+    } else {
+      // Use the path to your tabs group VC route (adjust if your group name differs)
+      router.replace("/(main)/vc");
     }
   };
 

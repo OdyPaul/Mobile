@@ -1,6 +1,6 @@
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-
+import { clearWalletConnectCache } from "../../hooks/clearWalletConnectCache";
 const API_URL = (process.env.EXPO_PUBLIC_API_URL || "").replace(/\/+$/, "");
 
 // -----------------------------------------------------------------------------
@@ -33,6 +33,7 @@ const register = async (userData) => {
 // LOGIN
 // -----------------------------------------------------------------------------
 const login = async (userData) => {
+  await clearWalletConnectCache();
   const { data } = await axios.post(`${API_URL}/api/mobile/users/login`, userData);
   console.log("Login API Response:", JSON.stringify(data, null, 2)); // 👈 add this
 
