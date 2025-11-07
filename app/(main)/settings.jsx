@@ -32,7 +32,11 @@ export default function Settings() {
 
   const displayName = user?.username || "—";
   const displayEmail = user?.email || "—";
-  const memberSince = user?.createdAt ? new Date(user.createdAt).toLocaleDateString() : "—";
+   const memberSince = user?.createdAt ? new Date(user.createdAt).toLocaleDateString() : "—";
+    const isVerified =
+      user?.verificationStatus === "verified" ||
+      user?.isVerified === true ||
+      user?.kycStatus === "verified";
 
   const handleLogout = async () => {
     setShowLogoutModal(false);
@@ -65,26 +69,35 @@ export default function Settings() {
             source={{ uri: "https://cdn-icons-png.flaticon.com/512/4140/4140048.png" }}
             style={s.avatar}
           />
-          <View style={s.profileInfo}>
-            <Text style={s.userName}>{displayName}</Text>
-            <Text style={s.userEmail}>{displayEmail}</Text>
-            <Text style={s.memberSince}>Member since {memberSince}</Text>
-          </View>
-        </View>
-
-        <TouchableOpacity
-          style={s.editProfileButton}
-          onPress={() => (pending ? router.replace("/(setup)/pendingVerification") : go())}
-          disabled={loading || checkingPending}
-        >
-          {loading || checkingPending ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={s.editProfileText}>
-              {pending ? "Account verification is pending..." : "Edit Profile"}
-            </Text>
-          )}
-        </TouchableOpacity>
+           <View style={s.profileInfo}>
+             <Text style={s.userName}>{displayName}</Text>
+             <Text style={s.userEmail}>{displayEmail}</Text>
+             <Text style={s.memberSince}>Member since {memberSince}</Text>
+           </View>
+         </View>
+    <TouchableOpacity
+      style={s.editProfileButton}
+      onPress={() => {
+        if (checkingPending || loading) return;
+        if (pending) return router.replace("/(setup)/pendingVerification");
+        if (isVerified) return router.push("/subs/settings/profile");
+        // not pending and not verified → enter your verification flow
+        return go(); // your hook already knows where to send them
+      }}
+      disabled={loading || checkingPending}
+    >
+      {loading || checkingPending ? (
+        <ActivityIndicator color="#fff" />
+      ) : (
+        <Text style={s.editProfileText}>
+          {isVerified
+            ? "View Profile"
+            : pending
+            ? "Account verification is pending..."
+            : "Verify Account"}
+        </Text>
+      )}
+    </TouchableOpacity>
 
         <View style={s.menuSection}>
           {menuItems.map((item, index) => (
@@ -116,7 +129,7 @@ export default function Settings() {
             <Ionicons name="mail-outline" size={moderateScale(22)} color="#1E5128" style={{ marginRight: scale(8) }} />
             <Text style={s.contactText}>Email us at:</Text>
           </View>
-          <Text style={s.contactEmail}>pocketcred_psau@ikswela.psau.edu.ph</Text>
+          <Text style={s.contactEmail}>email@pocketcred.pro</Text>
         </View>
       </ScrollView>
 

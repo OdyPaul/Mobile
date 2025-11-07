@@ -6,6 +6,18 @@ import Toast from "react-native-toast-message";
 import verificationService from "../features/verification/verificationService";
 import { normalizeVerificationList, hasPending, STORAGE_KEYS } from "../lib";
 
+function computeIsVerified(user) {
+  if (!user) return false;
+  const v = user.verified;
+  const asString = typeof v === "string" ? v.toLowerCase() : "";
+  return (
+    v === true ||
+    asString === "verified" ||
+    user.verificationStatus === "verified" ||
+    user.kycStatus === "verified"
+  );
+}
+
 export default function useVerificationRouting(router, user) {
   const [loading, setLoading] = useState(false);
 
@@ -14,6 +26,7 @@ export default function useVerificationRouting(router, user) {
     setLoading(true);
 
     try {
+      // Auth check
       const token = await AsyncStorage.getItem(STORAGE_KEYS.TOKEN);
       if (!token) {
         Toast.show({
@@ -25,21 +38,19 @@ export default function useVerificationRouting(router, user) {
         return;
       }
 
+      // Check server-side requests first (pending takes priority)
       const res = await verificationService.getMyVerificationRequests();
       const list = normalizeVerificationList(res);
       const pending = hasPending(list);
-
       if (pending) {
         router.replace("/(setup)/pendingVerification");
         return;
       }
 
-      const unverified =
-        !user?.verified ||
-        String(user.verified).toLowerCase() === "unverified";
-
-      if (unverified) {
-        // Let the button stop spinning while the alert is visible
+      // Local user object verdict
+      const isVerified = computeIsVerified(user);
+      if (!isVerified) {
+        // Let spinner stop while alert is visible
         setLoading(false);
         Alert.alert(
           "Account Not Verified",
@@ -49,7 +60,6 @@ export default function useVerificationRouting(router, user) {
             {
               text: "OK",
               onPress: () => {
-                // Optional: show spinner again only on confirm
                 setLoading(true);
                 router.replace("/(setup)/startSetup");
               },
@@ -59,11 +69,10 @@ export default function useVerificationRouting(router, user) {
         return;
       }
 
-      Toast.show({
-        type: "info",
-        text1: "You’re already verified",
-        text2: "No verification needed.",
-      });
+      // ✅ Verified → go straight to profile
+      setLoading(false);
+      router.push("/subs/settings/profile");
+      return;
     } catch (err) {
       Toast.show({
         type: "error",
@@ -71,8 +80,6 @@ export default function useVerificationRouting(router, user) {
         text2: err?.message || "Please try again later.",
       });
     } finally {
-      // If user tapped OK, we may have set loading back to true briefly;
-      // the route change will unmount anyway. If they canceled, this ensures it resets.
       setLoading(false);
     }
   }, [loading, router, user]);

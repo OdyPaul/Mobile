@@ -1,6 +1,14 @@
 // assets/components/Scan.jsx
 import React, { useEffect, useRef, useState } from "react";
-import { View, Text, ActivityIndicator, StyleSheet, TouchableOpacity } from "react-native";
+import {
+  View,
+  Text,
+  ActivityIndicator,
+  StyleSheet,
+  TouchableOpacity,
+  Dimensions,
+  Animated,
+} from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { inflateRaw } from "pako";
 import { decode as cborDecode } from "cborg";
@@ -17,7 +25,11 @@ const SCAN_COOLDOWN_MS = 180;
 const STALL_MS = 2500;
 const REPEAT_WINDOW = 256;
 
-// ----------------------------------- helpers
+// dashed square sizing
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
+const BOX_SIZE = Math.min(Math.floor(SCREEN_W * 0.78), Math.floor(SCREEN_H * 0.44));
+
+// ------------- helpers
 function extractUrString(ev) {
   if (!ev) return "";
   if (typeof ev === "string") return ev;
@@ -32,7 +44,8 @@ function extractUrString(ev) {
     if (typeof b.value === "string") return b.value;
   }
   if (ev.data && Array.isArray(ev.data) && typeof ev.data[0] === "string") return ev.data[0];
-  if (ev.data && Array.isArray(ev.data) && ev.data[0] && typeof ev.data[0].rawValue === "string") return ev.data[0].rawValue;
+  if (ev.data && Array.isArray(ev.data) && ev.data[0] && typeof ev.data[0].rawValue === "string")
+    return ev.data[0].rawValue;
 
   if (ev.nativeEvent && typeof ev.nativeEvent.codeStringValue === "string")
     return ev.nativeEvent.codeStringValue;
@@ -60,7 +73,6 @@ function getURBytes(ur) {
   throw new Error("UR payload missing bytes");
 }
 
-// --- claim URL: https(s)://<host>/c/:token
 function parseClaimUrl(s) {
   try {
     const u = new URL(String(s).trim());
@@ -72,16 +84,14 @@ function parseClaimUrl(s) {
   }
 }
 
-// ----------------------------------- component
-/**
- * Props:
- * - onComplete(vc?) -> optional callback when a VC is saved
- * - onCancel()      -> close overlay
- * - detailPath      -> route to push/replace after success (default "/subs/vc/detail")
- * - apiBase?        -> optional server base for queue redemption (e.g. "https://api.example.com")
- * - authToken?      -> optional bearer token for server-backed redemption + holder binding
- */
-export default function Scan({ onComplete, onCancel, detailPath = "/subs/vc/detail", apiBase, authToken }) {
+// ------------- component
+export default function Scan({
+  onComplete,
+  onCancel,
+  detailPath = "/subs/vc/detail",
+  apiBase,
+  authToken,
+}) {
   const [permission, requestPermission] = useCameraPermissions();
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState("idle"); // idle|scanning|done|error
@@ -94,10 +104,32 @@ export default function Scan({ onComplete, onCancel, detailPath = "/subs/vc/deta
   const lastProgressAt = useRef(0);
   const debugCount = useRef(0);
 
+  // HARD single-fire guards
+  const completedRef = useRef(false);
+  const [scanDisabled, setScanDisabled] = useState(false);
+
   const addVC = useWallet((s) => s.add);
   const router = useRouter();
 
-  useEffect(() => { if (!permission?.granted) requestPermission(); }, [permission]);
+  // animated scan line
+  const line = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (status === "scanning" || progress > 0) {
+      const anim = Animated.loop(
+        Animated.sequence([
+          Animated.timing(line, { toValue: 1, duration: 1200, useNativeDriver: true }),
+          Animated.timing(line, { toValue: 0, duration: 0, useNativeDriver: true }),
+        ])
+      );
+      anim.start();
+      return () => anim.stop();
+    }
+  }, [status, progress, line]);
+
+  useEffect(() => {
+    if (!permission?.granted) requestPermission();
+  }, [permission, requestPermission]);
+
   useEffect(() => () => session.current.reset(), []);
 
   useEffect(() => {
@@ -123,6 +155,9 @@ export default function Scan({ onComplete, onCancel, detailPath = "/subs/vc/deta
   }
 
   async function handleScanEvent(ev) {
+    // extra early outs
+    if (completedRef.current || scanDisabled) return;
+
     const now = Date.now();
     if (now - lastScanAt.current < SCAN_COOLDOWN_MS) return;
     lastScanAt.current = now;
@@ -134,7 +169,7 @@ export default function Scan({ onComplete, onCancel, detailPath = "/subs/vc/deta
     }
     if (!raw0) return;
 
-    // ---- 1) Claim URL branch (static PNG QR)
+    // ---- 1) Claim URL flow
     const claim = parseClaimUrl(raw0);
     if (claim?.token && claim?.url) {
       try {
@@ -142,7 +177,7 @@ export default function Scan({ onComplete, onCancel, detailPath = "/subs/vc/deta
         setHint("Saving token…");
         let saved = { id: null, vc: null };
 
-        const cfg = (apiBase && authToken) ? { apiBase, authToken } : undefined;
+        const cfg = apiBase && authToken ? { apiBase, authToken } : undefined;
         const res = await addTicketAndTryRedeem(
           { token: claim.token, url: claim.url, exp: null },
           async (payload) => {
@@ -169,9 +204,21 @@ export default function Scan({ onComplete, onCancel, detailPath = "/subs/vc/deta
         );
 
         if (res?.ok) {
+          if (completedRef.current) return;
+          completedRef.current = true;
+          setScanDisabled(true);
+
           setStatus("done");
           setProgress(100);
           setHint(null);
+
+          try {
+            session.current.reset();
+          } catch {}
+          seenRing.current = [];
+          seenSet.current.clear();
+          lastProgressAt.current = 0;
+
           if (onComplete) onComplete(saved.vc || {});
           else if (saved.id) router.replace(`${detailPath}?id=${encodeURIComponent(saved.id)}`);
           else router.replace("/vc");
@@ -187,7 +234,7 @@ export default function Scan({ onComplete, onCancel, detailPath = "/subs/vc/deta
       return;
     }
 
-    // ---- 2) UR branch (animated frames)
+    // ---- 2) UR multi-part flow
     const data = normalizeUr(raw0);
     if (!looksLikeUrPart(data)) return;
 
@@ -242,6 +289,10 @@ export default function Scan({ onComplete, onCancel, detailPath = "/subs/vc/deta
 
       await addVC(vc);
 
+      if (completedRef.current) return;
+      completedRef.current = true;
+      setScanDisabled(true);
+
       setStatus("done");
       setProgress(100);
       setHint(null);
@@ -261,7 +312,9 @@ export default function Scan({ onComplete, onCancel, detailPath = "/subs/vc/deta
         setStatus("idle");
         setProgress(0);
         setHint(null);
-        session.current.reset();
+        try {
+          session.current.reset();
+        } catch {}
         seenRing.current = [];
         seenSet.current.clear();
         lastProgressAt.current = 0;
@@ -270,23 +323,54 @@ export default function Scan({ onComplete, onCancel, detailPath = "/subs/vc/deta
   }
 
   if (!permission) {
-    return <View style={styles.center}><Text>Requesting camera permission...</Text></View>;
+    return (
+      <View style={styles.center}>
+        <Text>Requesting camera permission...</Text>
+      </View>
+    );
   }
   if (!permission.granted) {
-    return <View style={styles.center}><Text>Camera access not granted</Text></View>;
+    return (
+      <View style={styles.center}>
+        <Text>Camera access not granted</Text>
+      </View>
+    );
   }
+
+  const translateY = line.interpolate({
+    inputRange: [0, 1],
+    outputRange: [4, BOX_SIZE - 12],
+  });
+
+  const shouldScan =
+    (status === "idle" || status === "scanning") && !completedRef.current && !scanDisabled;
 
   return (
     <View style={{ flex: 1, backgroundColor: "#000" }}>
       <CameraView
         style={{ flex: 1 }}
         barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-        onBarcodeScanned={(status === "idle" || status === "scanning") ? handleScanEvent : undefined}
+        onBarcodeScanned={shouldScan ? handleScanEvent : undefined}
       />
 
       <TouchableOpacity onPress={onCancel} activeOpacity={0.85} style={styles.closeBtn}>
         <Ionicons name="close" size={22} color="#fff" />
       </TouchableOpacity>
+
+      {/* dashed box (no shaded mask) */}
+      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+        <View style={styles.boxCenter}>
+          <View style={[styles.cutoutBox, { width: BOX_SIZE, height: BOX_SIZE }]}>
+            <View style={[styles.corner, styles.tl]} />
+            <View style={[styles.corner, styles.tr]} />
+            <View style={[styles.corner, styles.bl]} />
+            <View style={[styles.corner, styles.br]} />
+            {(status === "scanning" || progress > 0) && (
+              <Animated.View style={[styles.scanLine, { transform: [{ translateY }] }]} />
+            )}
+          </View>
+        </View>
+      </View>
 
       <View style={styles.overlay}>
         {(status === "scanning" || progress > 0) && (
@@ -311,8 +395,10 @@ export default function Scan({ onComplete, onCancel, detailPath = "/subs/vc/deta
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
+
   overlay: { position: "absolute", bottom: 28, left: 0, right: 0, alignItems: "center" },
   progressCard: { backgroundColor: "rgba(0,0,0,0.6)", padding: 12, borderRadius: 10, maxWidth: 320 },
+
   closeBtn: {
     position: "absolute",
     top: 18,
@@ -324,5 +410,32 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     zIndex: 10,
+  },
+
+  boxCenter: { flex: 1, alignItems: "center", justifyContent: "center" },
+  cutoutBox: {
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+    borderRadius: 14,
+    borderStyle: "dashed",
+    backgroundColor: "transparent",
+    alignItems: "center",
+    justifyContent: "flex-start",
+  },
+
+  corner: { position: "absolute", width: 28, height: 28, borderColor: "#00E0FF" },
+  tl: { top: -2, left: -2, borderTopWidth: 4, borderLeftWidth: 4, borderTopLeftRadius: 10 },
+  tr: { top: -2, right: -2, borderTopWidth: 4, borderRightWidth: 4, borderTopRightRadius: 10 },
+  bl: { bottom: -2, left: -2, borderBottomWidth: 4, borderLeftWidth: 4, borderBottomLeftRadius: 10 },
+  br: { bottom: -2, right: -2, borderBottomWidth: 4, borderRightWidth: 4, borderBottomRightRadius: 10 },
+
+  scanLine: {
+    position: "absolute",
+    left: 4,
+    right: 4,
+    height: 2,
+    backgroundColor: "#00E0FF",
+    opacity: 0.9,
+    borderRadius: 1,
   },
 });

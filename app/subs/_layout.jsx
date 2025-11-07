@@ -6,6 +6,10 @@ export default function SubsLayout() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="walletConnect" />
       <Stack.Screen name="vc/detail" />
+      <Stack.Screen name="vc/share" />
+      <Stack.Screen name="settings/profile" />
+
+
 
     </Stack>
   );

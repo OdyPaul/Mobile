@@ -22,7 +22,6 @@ export default function VerifyEmail() {
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
 
-  useEffect(() => { if (email) resend(); }, []);
 
   useEffect(() => {
     if (isError && message) {
