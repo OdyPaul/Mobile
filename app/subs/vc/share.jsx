@@ -30,6 +30,17 @@ import { presentableIdFromVc } from "../../../features/session/verificationSessi
 const WEB_BASE = (process.env.EXPO_PUBLIC_WEB_BASE || "").replace(/\/+$/, "");
 const ORIGIN = (process.env.EXPO_PUBLIC_API_URL || "").replace(/\/+$/, "");
 
+// --- NEW: tiny helper to remove a query param from any URL string
+function stripParam(u, name) {
+  try {
+    const url = new URL(u);
+    url.searchParams.delete(name);
+    return url.toString();
+  } catch {
+    return u;
+  }
+}
+
 export default function ShareVC() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
@@ -42,7 +53,7 @@ export default function ShareVC() {
   const name = vc?.meta?.fullName || "—";
   const code = String(id || "").slice(-6);
 
-  // Compute a server-resolvable credential id for links + backend lookup
+  // Compute a server-resolvable credential id for backend lookup (not for URL)
   const cidForLink = useMemo(() => {
     if (!vc) return null;
     return presentableIdFromVc(vc);
@@ -58,24 +69,20 @@ export default function ShareVC() {
   const verifyUrl = useMemo(() => {
     if (!sessionId) return "";
 
-    // Prefer client-side override to point at your frontend
+    // Prefer client-side override → DO NOT append credential_id
     if (WEB_BASE) {
       const url = /\{session\}/.test(WEB_BASE)
         ? WEB_BASE.replace("{session}", sessionId)
         : `${WEB_BASE}/${sessionId}`;
-      const sep = url.includes("?") ? "&" : "?";
-      // Append credential_id ONLY if resolvable
-      return cidForLink ? `${url}${sep}credential_id=${encodeURIComponent(cidForLink)}` : url;
+      return url;
     }
 
-    // Fallback: use server-provided URL; append credential_id ONLY if resolvable and not already present
+    // Fallback: use server-provided URL; strip credential_id if present (privacy)
     if (!verifyUrlRaw) return "";
-    if (/\bcredential_id=/.test(verifyUrlRaw)) return verifyUrlRaw;
-    const sep = verifyUrlRaw.includes("?") ? "&" : "?";
-    return cidForLink ? `${verifyUrlRaw}${sep}credential_id=${encodeURIComponent(cidForLink)}` : verifyUrlRaw;
-  }, [WEB_BASE, sessionId, verifyUrlRaw, cidForLink]);
+    return stripParam(verifyUrlRaw, "credential_id");
+  }, [WEB_BASE, sessionId, verifyUrlRaw]);
 
-  // Kick off create-session on mount (optionally bake a resolvable id into the created link)
+  // Kick off create-session on mount (keep your current behavior)
   useEffect(() => {
     if (!ORIGIN) {
       Alert.alert("Configuration error", "EXPO_PUBLIC_API_URL is not set.");
@@ -85,13 +92,13 @@ export default function ShareVC() {
       dispatch(
         createSession({
           ttlHours: 168,
-          credential_id: cidForLink || undefined, // bake only if resolvable
+          credential_id: cidForLink || undefined, // unchanged: still sent to backend, but NOT exposed in URL
         })
       );
     }
   }, [dispatch, id, cidForLink]);
 
-  // Persist a hint so SessionWatcher/Modal can recover after app reloads
+  // Persist a hint so SessionWatcher/Modal can recover after app reloads (unchanged)
   useEffect(() => {
     (async () => {
       try {
@@ -122,7 +129,7 @@ export default function ShareVC() {
       dispatch(
         createSession({
           ttlHours: 168,
-          credential_id: cidForLink || undefined, // keep baking the resolvable id
+          credential_id: cidForLink || undefined,
         })
       );
     }
