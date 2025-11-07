@@ -37,29 +37,44 @@ export async function presentToSession(sessionId, body, apiOverride) {
 
 // ---------- Helpers ----------
 
+// ---------- Helpers ----------
 const get = (obj, path) => {
   if (!obj) return undefined;
   return path.split('.').reduce((o, k) => (o && o[k] !== undefined ? o[k] : undefined), obj);
 };
 const coalesce = (...vals) => vals.find((v) => v !== undefined && v !== null && v !== '');
 
-const looksLikeObjectId  = (s) => typeof s === 'string' && /^[a-f0-9]{24}$/i.test(s);
+const looksLikeObjectId = (s) => typeof s === 'string' && /^[a-f0-9]{24}$/i.test(s);
 const looksLikePublicKey = (s) => typeof s === 'string' && /^web_[A-Za-z0-9\-_]{6,64}$/.test(s);
-
 /** Extract a resolvable server id from a VC (prefer public key, else mongo _id) */
 export function presentableIdFromVc(vc) {
+  // 1) Preferred: server "key" (e.g., web_...)
   const key = coalesce(
     get(vc, 'key'), get(vc, 'publicKey'), get(vc, 'serverKey'),
     get(vc, 'signed.key'), get(vc, 'payload.key'), get(vc, 'meta.key'),
   );
   if (looksLikePublicKey(key)) return key;
 
+  // 2) Mongo ObjectId
   const oid = coalesce(
     get(vc, '_id'), get(vc, 'dbId'), get(vc, 'mongoId'),
     get(vc, 'signed._id'), get(vc, 'payload._id'),
   );
   if (looksLikeObjectId(oid)) return oid;
 
+  // 3) Student identifier (your backend queries SignedVC by `student_id`)
+  const student = coalesce(
+    get(vc, 'student_id'),
+    get(vc, 'meta.student_id'),
+    get(vc, 'meta.studentId'),
+    get(vc, 'meta.studentNumber'),
+    get(vc, 'payload.student_id'),
+    get(vc, 'credentialSubject.student_id'),
+    get(vc, 'credentialSubject.studentNumber'),
+  );
+  if (student) return String(student);
+
+  // 4) As a last resort, use plain vc.id only if it's clearly server-real
   const maybe = get(vc, 'id');
   if (looksLikePublicKey(maybe) || looksLikeObjectId(maybe)) return String(maybe);
 
