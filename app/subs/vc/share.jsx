@@ -1,5 +1,5 @@
 // app/subs/vc/share.jsx
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo } from "react";
 import {
   SafeAreaView,
   View,
@@ -22,7 +22,8 @@ import {
   selectSessionVerifyUrl,
   selectSessionId,
 } from "../../../features/session/verificationSessionSlice";
-import { openVerificationModal } from "../../../redux_store/slices/consentModalSlice";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 // If set, we force links to your frontend, e.g. http://localhost:5173/verification-portal
 // Supports optional placeholder: http://localhost:5173/verification-portal?session={session}
 const WEB_BASE = (process.env.EXPO_PUBLIC_WEB_BASE || "").replace(/\/+$/, "");
@@ -41,10 +42,29 @@ export default function ShareVC() {
   const code = String(id || "").slice(-6);
 
   // Redux state
-  const creating    = useSelector(selectSessionCreating);
-  const createErr   = useSelector(selectSessionCreateErr);
-  const verifyUrlRaw= useSelector(selectSessionVerifyUrl);
-  const sessionId   = useSelector(selectSessionId);
+  const creating     = useSelector(selectSessionCreating);
+  const createErr    = useSelector(selectSessionCreateErr);
+  const verifyUrlRaw = useSelector(selectSessionVerifyUrl);
+  const sessionId    = useSelector(selectSessionId);
+// Persist a hint so SessionWatcher/Modal can recover after app reloads
+useEffect(() => {
+  (async () => {
+    if (sessionId && id) {
+      try { await AsyncStorage.setItem(`vc_hint_${sessionId}`, String(id)); } catch {}
+    }
+  })();
+}, [sessionId, id]);
+
+  // Kick off create-session on mount (NO credential_id sent to server)
+  useEffect(() => {
+    if (!ORIGIN) {
+      Alert.alert("Configuration error", "EXPO_PUBLIC_API_URL is not set.");
+      return;
+    }
+    if (id) {
+      dispatch(createSession({ ttlHours: 168 }));
+    }
+  }, [dispatch, id]);
 
   // Build the final link to show (prefer WEB_BASE if set)
   const verifyUrl = useMemo(() => {
@@ -64,26 +84,6 @@ export default function ShareVC() {
     return `${verifyUrlRaw}${sep}credential_id=${encodeURIComponent(String(id || ""))}`;
   }, [WEB_BASE, sessionId, verifyUrlRaw, id]);
 
-  const openedRef   = useRef(false);
-  // Kick off create-session on mount
-  useEffect(() => {
-    if (!ORIGIN) {
-      Alert.alert("Configuration error", "EXPO_PUBLIC_API_URL is not set.");
-      return;
-    }
-    if (id) {
-      // 7 days; bake the VC id into the created session/link server-side
-      dispatch(createSession({ ttlHours: 168, credential_id: String(id) }));
-    }
-     }, [dispatch, id]);
-     // When a session exists, open the phone's consent modal
-     useEffect(() => {
-     if (sessionId && !openedRef.current) {
-       openedRef.current = true;
-       dispatch(openVerificationModal({ sessionId, credentialId: String(id || "") }));
-     }
- }, [sessionId, id, dispatch]);
-
   // Use native share sheet (often includes "Copy" action)
   const shareLink = async () => {
     if (!verifyUrl) return;
@@ -93,7 +93,7 @@ export default function ShareVC() {
   };
 
   const regenerate = () => {
-    if (id) dispatch(createSession({ ttlHours: 168, credential_id: String(id) }));
+    if (id) dispatch(createSession({ ttlHours: 168 }));
   };
 
   return (

@@ -12,9 +12,6 @@ import {
 // Create a verification session (returns verifyUrl you show as QR)
 export const createSession = createAsyncThunk(
   'verificationSession/create',
-  /**
-   * args: { ttlHours=168, credential_id, apiOverride? }
-   */
   async (args, thunkAPI) => {
     try {
       const { ttlHours = 168, credential_id, apiOverride } = args || {};
@@ -30,32 +27,34 @@ export const createSession = createAsyncThunk(
 // Present: holder confirms (payload) or server verifies by credential_id
 export const presentSession = createAsyncThunk(
   'verificationSession/present',
-  /**
-   * args: { sessionId, vc?, credential_id?, apiOverride? }
-   */
   async (args, thunkAPI) => {
     try {
       const { sessionId, vc, credential_id, apiOverride } = args || {};
       if (!sessionId) throw new Error('sessionId is required');
 
+      // Build EXACTLY ONE branch to satisfy the backend's strict Zod union
       let body = null;
 
       // 1) Prefer stateless payload when jws/salt/digest exist
-      if (vc) body = tryBuildPayloadBody(vc);
+      if (vc) {
+        const payloadBody = tryBuildPayloadBody(vc); // -> { payload: {...} } or null
+        if (payloadBody) body = payloadBody;
+      }
 
-      // 2) Fallback to server-recognizable id from the VC
+      // 2) Else fallback to a resolvable credential_id derived from the VC
       if (!body && vc) {
         const derived = presentableIdFromVc(vc);
         if (derived) body = { credential_id: String(derived) };
       }
 
-      // 3) Explicit credential_id still allowed
+      // 3) Else use explicit credential_id passed in
       if (!body && credential_id) {
         body = { credential_id: String(credential_id) };
       }
 
       if (!body) throw new Error('No sendable VC: missing payload and credential_id');
 
+      // IMPORTANT: Do NOT send { decision: 'allow' } — backend rejects it.
       const data = await presentToSession(sessionId, body, apiOverride);
       return { sessionId, apiOverride: apiOverride || null, ...data };
     } catch (e) {
