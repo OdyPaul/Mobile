@@ -1,4 +1,4 @@
-// app/home.jsx (or wherever your Home component lives)
+// app/home.jsx
 import React from "react";
 import {
   View,
@@ -8,10 +8,16 @@ import {
   Dimensions,
   TouchableWithoutFeedback,
   SafeAreaView,
+  Modal,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { moderateScale as ms } from "react-native-size-matters";
+import * as ImagePicker from "expo-image-picker";
+// Adjust this path if your file structure differs:
+import Scan from "../assets/components/scan";
 
 const { width, height } = Dimensions.get("window");
 const BOX_W = Math.round(width * 0.75);
@@ -19,7 +25,63 @@ const BOX_H = Math.round(height * 0.55);
 
 export default function Home() {
   const router = useRouter();
+
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const [addOpen, setAddOpen] = React.useState(false);            // modal for Add Credential
+  const [isScanning, setIsScanning] = React.useState(false);      // overlay for Scan
+  const [galleryBusy, setGalleryBusy] = React.useState(false);
+  const [pickedImageUri, setPickedImageUri] = React.useState(null); // passed to Scan
+  const navigateOnceRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!isScanning) navigateOnceRef.current = false;
+  }, [isScanning]);
+
+  const goDetail = (vc) => {
+    if (navigateOnceRef.current) return;
+    navigateOnceRef.current = true;
+    setIsScanning(false);
+    requestAnimationFrame(() => {
+      const id = vc?.id ? String(vc.id) : "";
+      if (id) router.replace(`/subs/vc/detail?id=${encodeURIComponent(id)}`);
+      else router.replace("/(main)/vc");
+    });
+  };
+
+  const pickFromGallery = async () => {
+    try {
+      setGalleryBusy(true);
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        setGalleryBusy(false);
+        Alert.alert("Permission needed", "Allow photo library access to import a QR image.");
+        return;
+      }
+
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: false,
+        quality: 1,
+      });
+
+      setGalleryBusy(false);
+      if (res.canceled) return;
+
+      const uri = res.assets?.[0]?.uri;
+      if (!uri) {
+        Alert.alert("No image", "Couldn’t read the selected image.");
+        return;
+      }
+
+      // Hand off to your Scan overlay; Scan may decode this still image if supported.
+      setPickedImageUri(uri);
+      setAddOpen(false);
+      setIsScanning(true);
+    } catch (e) {
+      setGalleryBusy(false);
+      Alert.alert("Error", e?.message || "Failed to import image.");
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -30,7 +92,7 @@ export default function Home() {
           accessibilityRole="button"
           hitSlop={10}
           style={styles.iconBtn}
-          onPress={() => router.push("/notifications")} // <-- adjust route if needed
+          onPress={() => router.push("/notifications")}
         >
           <Ionicons name="notifications-outline" size={ms(24)} color="#111827" />
         </Pressable>
@@ -59,7 +121,7 @@ export default function Home() {
             style={styles.menuItem}
             onPress={() => {
               setMenuOpen(false);
-              router.push("/subs/vc/settings"); // <-- adjust route if needed
+              router.push("/subs/vc/settings");
             }}
           >
             <Text style={styles.menuText}>Settings VC</Text>
@@ -69,7 +131,7 @@ export default function Home() {
             style={styles.menuItem}
             onPress={() => {
               setMenuOpen(false);
-              router.push("/profile"); // <-- adjust route if needed
+              router.push("/profile");
             }}
           >
             <Text style={styles.menuText}>View Profile</Text>
@@ -79,16 +141,85 @@ export default function Home() {
 
       {/* Middle content */}
       <View style={styles.center}>
+        {/* Request Credential button */}
+        <Pressable
+          onPress={() => router.push("/subs/vc/request")} // adjust if you have a different route
+          style={styles.requestBtn}
+        >
+          <Ionicons name="mail-outline" size={ms(18)} color="#fff" />
+          <Text style={styles.requestBtnText}>Request Credential</Text>
+        </Pressable>
+
         <Text style={styles.title}>Add credential now.</Text>
 
+        {/* Add Credential box → opens modal with Open Scanner / Choose from Gallery */}
         <Pressable
           style={[styles.addBox, { width: BOX_W, height: BOX_H }]}
-          onPress={() => router.push("/subs/vc/collect")} // <-- adjust route if needed
+          onPress={() => setAddOpen(true)}
         >
           <Ionicons name="add" size={ms(44)} color="#6b7280" />
           <Text style={styles.addHint}>Click to add</Text>
         </Pressable>
       </View>
+
+      {/* Add modal */}
+      <Modal
+        visible={addOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAddOpen(false)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setAddOpen(false)} />
+        <View style={styles.modalCard}>
+          <Text style={styles.modalTitle}>Add Credential</Text>
+
+          {/* Open live scanner (uses your Scan component) */}
+          <Pressable
+            style={[styles.actionBtn, { backgroundColor: "#16A34A" }]}
+            onPress={() => {
+              setPickedImageUri(null);
+              setAddOpen(false);
+              setIsScanning(true);
+            }}
+          >
+            <Ionicons name="qr-code-outline" size={ms(22)} color="#fff" />
+            <Text style={[styles.actionBtnText, { color: "#fff" }]}>Open Scanner</Text>
+          </Pressable>
+
+          {/* Choose QR on Gallery */}
+          <Pressable
+            style={[styles.actionBtn, { backgroundColor: "#F3F4F6", marginTop: ms(10) }]}
+            onPress={pickFromGallery}
+          >
+            <Ionicons name="image-outline" size={ms(22)} color="#111827" />
+            <Text style={[styles.actionBtnText, { color: "#111827" }]}>
+              Choose QR on Gallery
+            </Text>
+          </Pressable>
+
+          {galleryBusy && (
+            <View style={styles.decodingRow}>
+              <ActivityIndicator />
+              <Text style={styles.decodingText}>Opening gallery…</Text>
+            </View>
+          )}
+
+          <Pressable style={styles.modalClose} onPress={() => setAddOpen(false)}>
+            <Text style={{ color: "#16A34A", fontWeight: "700" }}>Close</Text>
+          </Pressable>
+        </View>
+      </Modal>
+
+      {/* Full-screen scanner overlay (your Scan component) */}
+      {isScanning && (
+        <View style={styles.scannerOverlay}>
+          <Scan
+            imageUri={pickedImageUri /* optional: Decode still image if Scan supports it */}
+            onCancel={() => setIsScanning(false)}
+            onComplete={goDetail}
+          />
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -148,6 +279,20 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: ms(20), fontWeight: "800", color: "#111827" },
 
+  // Request button
+  requestBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: ms(8),
+    backgroundColor: "#16A34A",
+    paddingHorizontal: ms(14),
+    paddingVertical: ms(10),
+    borderRadius: ms(12),
+    marginBottom: ms(8),
+  },
+  requestBtnText: { color: "#fff", fontWeight: "800", fontSize: ms(14) },
+
+  // Add box
   addBox: {
     borderWidth: ms(2),
     borderStyle: "dashed",
@@ -158,4 +303,50 @@ const styles = StyleSheet.create({
     gap: ms(8),
   },
   addHint: { fontSize: ms(14), color: "#6b7280", fontWeight: "700" },
+
+  // Modal
+  modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)" },
+  modalCard: {
+    position: "absolute",
+    left: ms(16),
+    right: ms(16),
+    top: "22%",
+    backgroundColor: "#fff",
+    borderRadius: ms(16),
+    padding: ms(16),
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOpacity: 0.15,
+    shadowRadius: ms(10),
+    shadowOffset: { width: 0, height: 6 },
+  },
+  modalTitle: { fontSize: ms(16), fontWeight: "800", marginBottom: ms(10), textAlign: "center" },
+  actionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: ms(8),
+    paddingVertical: ms(12),
+    paddingHorizontal: ms(12),
+    borderRadius: ms(12),
+    justifyContent: "center",
+  },
+  actionBtnText: { fontSize: ms(14), fontWeight: "700" },
+  modalClose: { marginTop: ms(10), alignSelf: "center", padding: ms(8) },
+
+  decodingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: ms(8),
+    marginTop: ms(10),
+    alignSelf: "center",
+  },
+  decodingText: { color: "#374151", fontWeight: "600" },
+
+  // Scanner overlay
+  scannerOverlay: {
+    position: "absolute",
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: "#000",
+    zIndex: 999,
+  },
 });

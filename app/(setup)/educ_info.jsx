@@ -1,14 +1,19 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import { s, vs } from "react-native-size-matters";
 import { useRouter, useLocalSearchParams } from "expo-router";
 
 const PRIMARY_GREEN = "#28a745";
+const BG = "#f2f4f9";
+const LINE = "#DADDE1";
+const LABEL = "#515E6B";
+const PLACEHOLDER = "#9AA0A6";
 
 export default function EducationInfo() {
   const router = useRouter();
   const { personal } = useLocalSearchParams();
-  const personalData = personal ? JSON.parse(personal) : {};
+  const personalData = personal ? JSON.parse(String(personal)) : {};
 
   const [education, setEducation] = useState({
     highSchool: "",
@@ -16,50 +21,77 @@ export default function EducationInfo() {
     graduationDate: "",
   });
 
-  const handleNext = () => {
+  const goNext = () =>
     router.push({
       pathname: "/(setup)/selfie",
-      params: {
-        personal: JSON.stringify(personalData),
-        education: JSON.stringify(education),
-      },
+      params: { personal: JSON.stringify(personalData), education: JSON.stringify(education) },
     });
-  };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Education Information</Text>
+    <View style={{ flex: 1, backgroundColor: BG }}>
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.container}
+        extraScrollHeight={80}
+        enableOnAndroid
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={styles.title}>Education Information</Text>
 
-      <TextInput
-        style={styles.input}
-        placeholder="High School"
-        value={education.highSchool}
-        onChangeText={(t) => setEducation({ ...education, highSchool: t })}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Date of Admission (ex. 2021-2022)"
-        value={education.admissionDate}
-        onChangeText={(t) => setEducation({ ...education, admissionDate: t })}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Date Graduated (ex. 2025)"
-        value={education.graduationDate}
-        onChangeText={(t) => setEducation({ ...education, graduationDate: t })}
-      />
+        <View style={styles.field}>
+          <Text style={styles.label}>High School</Text>
+          <TextInput
+            style={styles.lineInput}
+            placeholder="ex. Pampanga National High School"
+            placeholderTextColor={PLACEHOLDER}
+            value={education.highSchool}
+            onChangeText={(t) => setEducation({ ...education, highSchool: t })}
+          />
+        </View>
 
-      <TouchableOpacity style={styles.button} onPress={handleNext}>
-        <Text style={styles.btnText}>Next</Text>
-      </TouchableOpacity>
-    </ScrollView>
+        <View style={styles.field}>
+          <Text style={styles.label}>Admission to PSAU</Text>
+          <TextInput
+            style={styles.lineInput}
+            placeholder="ex. 2021–2022 (or YYYY-MM-DD)"
+            placeholderTextColor={PLACEHOLDER}
+            value={education.admissionDate}
+            onChangeText={(t) => setEducation({ ...education, admissionDate: t })}
+          />
+        </View>
+
+        <View style={styles.field}>
+          <Text style={styles.label}>Graduation date</Text>
+          <TextInput
+            style={styles.lineInput}
+            placeholder="ex. 2025 (or YYYY-MM-DD)"
+            placeholderTextColor={PLACEHOLDER}
+            value={education.graduationDate}
+            onChangeText={(t) => setEducation({ ...education, graduationDate: t })}
+          />
+        </View>
+
+        <TouchableOpacity style={styles.button} onPress={goNext}>
+          <Text style={styles.btnText}>Next</Text>
+        </TouchableOpacity>
+      </KeyboardAwareScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, justifyContent: "center", alignItems: "center", padding: s(20), backgroundColor: "#f2f4f9" },
-  title: { fontSize: s(20), fontWeight: "700", marginBottom: vs(20) },
-  input: { width: "100%", borderWidth: 1, borderColor: "#ccc", borderRadius: s(10), padding: s(12), marginBottom: vs(15) },
-  button: { backgroundColor: PRIMARY_GREEN, padding: vs(14), borderRadius: s(12), alignItems: "center", width: "100%" },
-  btnText: { color: "#fff", fontSize: s(16), fontWeight: "600" },
+  container: { flexGrow: 1, padding: s(20), alignItems: "center" },
+  title: { fontSize: s(22), fontWeight: "700", marginBottom: vs(10) },
+  field: { width: "100%", marginBottom: vs(14) },
+  label: { fontSize: s(12), fontWeight: "600", color: LABEL, marginBottom: vs(6), alignSelf: "flex-start" },
+  lineInput: {
+    width: "100%",
+    paddingVertical: vs(10),
+    fontSize: s(14),
+    backgroundColor: "transparent",
+    borderBottomWidth: 1,
+    borderBottomColor: LINE,
+  },
+  button: { backgroundColor: PRIMARY_GREEN, paddingVertical: vs(14), borderRadius: s(12), alignItems: "center", width: "100%", marginTop: vs(14) },
+  btnText: { color: "#fff", fontSize: s(16), fontWeight: "700" },
 });

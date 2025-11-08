@@ -1,17 +1,33 @@
-import React, { useState, useRef } from "react";
+import React, { useRef, useState, forwardRef } from "react";
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  ScrollView,
   Alert,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import { s, vs } from "react-native-size-matters";
 import { useRouter } from "expo-router";
 
 const PRIMARY_GREEN = "#28a745";
+const BG = "#f2f4f9";
+const LINE = "#DADDE1";
+const LABEL = "#515E6B";
+const PLACEHOLDER = "#9AA0A6";
+
+const LabeledLineInput = forwardRef(({ label, style, ...props }, ref) => (
+  <View style={{ width: "100%", marginBottom: vs(14) }}>
+    <Text style={styles.label}>{label}</Text>
+    <TextInput
+      ref={ref}
+      style={[styles.lineInput, style]}
+      placeholderTextColor={PLACEHOLDER}
+      {...props}
+    />
+  </View>
+));
 
 export default function PersonalInfo() {
   const router = useRouter();
@@ -20,219 +36,195 @@ export default function PersonalInfo() {
     fullName: "",
     address: "",
     birthPlace: "",
-    birthDate: "", // final ISO string version
+    birthDate: "",
   });
 
-  // Split full name parts
   const [firstName, setFirstName] = useState("");
   const [middleName, setMiddleName] = useState("");
   const [lastName, setLastName] = useState("");
 
-  // Separate state for date components
   const [birthYear, setBirthYear] = useState("");
   const [birthMonth, setBirthMonth] = useState("");
   const [birthDay, setBirthDay] = useState("");
 
-  // Refs for auto focus
-  const monthRef = useRef(null);
-  const dayRef = useRef(null);
+  const refs = {
+    middle: useRef(null),
+    last: useRef(null),
+    address: useRef(null),
+    birthPlace: useRef(null),
+    year: useRef(null),
+    month: useRef(null),
+    day: useRef(null),
+  };
 
   const handleNext = () => {
-    const combinedFullName = `${firstName} ${middleName} ${lastName}`.trim();
-    const updatedPersonal = { ...personal, fullName: combinedFullName };
-
-    if (!combinedFullName || !updatedPersonal.address || !updatedPersonal.birthPlace) {
+    const full = `${firstName} ${middleName} ${lastName}`.replace(/\s+/g, " ").trim();
+    if (!full || !personal.address || !personal.birthPlace) {
       return Alert.alert("Missing Information", "Please complete all fields.");
     }
-
-    // Validate date
-    const y = parseInt(birthYear);
-    const m = parseInt(birthMonth);
-    const d = parseInt(birthDay);
-
+    const y = parseInt(birthYear, 10);
+    const m = parseInt(birthMonth, 10);
+    const d = parseInt(birthDay, 10);
     if (!y || !m || !d || m < 1 || m > 12 || d < 1 || d > 31) {
       return Alert.alert("Invalid Date", "Please enter a valid date of birth.");
     }
+    const birthDateISO = new Date(
+      `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`
+    ).toISOString();
 
-    const birthDateISO = new Date(`${y}-${m}-${d}`).toISOString();
-    const fullPersonal = { ...updatedPersonal, birthDate: birthDateISO };
+    const updated = { ...personal, fullName: full, birthDate: birthDateISO };
 
     router.push({
       pathname: "/(setup)/educ_info",
-      params: { personal: JSON.stringify(fullPersonal) },
+      params: { personal: JSON.stringify(updated) },
     });
   };
 
-  const handleYearChange = (text) => {
-    setBirthYear(text);
-    if (text.length === 4) monthRef.current?.focus();
-  };
-
-  const handleMonthChange = (text) => {
-    setBirthMonth(text);
-    if (text.length === 2) dayRef.current?.focus();
-  };
-
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Personal Information</Text>
+    <View style={{ flex: 1, backgroundColor: BG }}>
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.container}
+        extraScrollHeight={80}
+        enableOnAndroid
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={styles.title}>Personal Information</Text>
 
-      {/* Full Name Split */}
-      <Text style={styles.label}>Full Name</Text>
-      <View style={styles.nameRow}>
-        <TextInput
-          style={[styles.input, styles.nameInput]}
-          placeholder="First Name"
-          placeholderTextColor="black"
+        <LabeledLineInput
+          label="First name"
+          placeholder="Ex: Juan"
           value={firstName}
+          returnKeyType="next"
+          onSubmitEditing={() => refs.middle.current?.focus()}
           onChangeText={(t) => {
             setFirstName(t);
-            setPersonal({ ...personal, fullName: `${t} ${middleName} ${lastName}`.trim() });
+            setPersonal({
+              ...personal,
+              fullName: `${t} ${middleName} ${lastName}`.replace(/\s+/g, " ").trim(),
+            });
           }}
         />
-        <TextInput
-          style={[styles.input, styles.nameInput]}
-          placeholder="Middle Name"
-          placeholderTextColor="black"
+        <LabeledLineInput
+          ref={refs.middle}
+          label="Middle name"
+          placeholder="Optional"
           value={middleName}
+          returnKeyType="next"
+          onSubmitEditing={() => refs.last.current?.focus()}
           onChangeText={(t) => {
             setMiddleName(t);
-            setPersonal({ ...personal, fullName: `${firstName} ${t} ${lastName}`.trim() });
+            setPersonal({
+              ...personal,
+              fullName: `${firstName} ${t} ${lastName}`.replace(/\s+/g, " ").trim(),
+            });
           }}
         />
-        <TextInput
-          style={[styles.input, styles.nameInput]}
-          placeholder="Last Name"
-          placeholderTextColor="black"
+        <LabeledLineInput
+          ref={refs.last}
+          label="Last name"
+          placeholder="Ex: Dela Cruz"
           value={lastName}
+          returnKeyType="next"
+          onSubmitEditing={() => refs.address.current?.focus()}
           onChangeText={(t) => {
             setLastName(t);
-            setPersonal({ ...personal, fullName: `${firstName} ${middleName} ${t}`.trim() });
+            setPersonal({
+              ...personal,
+              fullName: `${firstName} ${middleName} ${t}`.replace(/\s+/g, " ").trim(),
+            });
           }}
         />
-      </View>
-
-      {/* Address */}
-      <Text style={styles.label}>Address</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Enter your address"
-        placeholderTextColor="black"
-        value={personal.address}
-        onChangeText={(t) => setPersonal({ ...personal, address: t })}
-      />
-
-      {/* Birthplace */}
-      <Text style={styles.label}>Place of Birth</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Enter your place of birth"
-        placeholderTextColor="black"
-        value={personal.birthPlace}
-        onChangeText={(t) => setPersonal({ ...personal, birthPlace: t })}
-      />
-
-      {/* Date of Birth */}
-      <Text style={styles.label}>Date of Birth</Text>
-      <View style={styles.dateRow}>
-        <TextInput
-          style={[styles.input, styles.dateInput]}
-          placeholder="YYYY"
-          placeholderTextColor="black"
-          keyboardType="numeric"
-          maxLength={4}
-          value={birthYear}
-          onChangeText={handleYearChange}
+        <LabeledLineInput
+          ref={refs.address}
+          label="Address"
+          placeholder="House / Street / City / Province"
+          value={personal.address}
           returnKeyType="next"
+          onSubmitEditing={() => refs.birthPlace.current?.focus()}
+          onChangeText={(t) => setPersonal({ ...personal, address: t })}
         />
-        <TextInput
-          ref={monthRef}
-          style={[styles.input, styles.dateInput]}
-          placeholder="MM"
-          placeholderTextColor="black"
-          keyboardType="numeric"
-          maxLength={2}
-          value={birthMonth}
-          onChangeText={handleMonthChange}
+        <LabeledLineInput
+          ref={refs.birthPlace}
+          label="Place of birth"
+          placeholder="City / Province / Country"
+          value={personal.birthPlace}
           returnKeyType="next"
+          onSubmitEditing={() => refs.year.current?.focus()}
+          onChangeText={(t) => setPersonal({ ...personal, birthPlace: t })}
         />
-        <TextInput
-          ref={dayRef}
-          style={[styles.input, styles.dateInput]}
-          placeholder="DD"
-          placeholderTextColor="black"
-          keyboardType="numeric"
-          maxLength={2}
-          value={birthDay}
-          onChangeText={setBirthDay}
-        />
-      </View>
 
-      <TouchableOpacity style={styles.button} onPress={handleNext}>
-        <Text style={styles.btnText}>Next</Text>
-      </TouchableOpacity>
-    </ScrollView>
+        <Text style={[styles.label, { marginTop: vs(6) }]}>Date of birth</Text>
+        <View style={styles.dateRow}>
+          <TextInput
+            ref={refs.year}
+            style={[styles.lineInput, styles.dateInput]}
+            placeholder="YYYY"
+            placeholderTextColor={PLACEHOLDER}
+            keyboardType="number-pad"
+            maxLength={4}
+            value={birthYear}
+            returnKeyType="next"
+            onChangeText={(t) => {
+              setBirthYear(t);
+              if (t.length === 4) refs.month.current?.focus();
+            }}
+          />
+          <TextInput
+            ref={refs.month}
+            style={[styles.lineInput, styles.dateInput]}
+            placeholder="MM"
+            placeholderTextColor={PLACEHOLDER}
+            keyboardType="number-pad"
+            maxLength={2}
+            value={birthMonth}
+            returnKeyType="next"
+            onChangeText={(t) => {
+              setBirthMonth(t);
+              if (t.length === 2) refs.day.current?.focus();
+            }}
+          />
+          <TextInput
+            ref={refs.day}
+            style={[styles.lineInput, styles.dateInput]}
+            placeholder="DD"
+            placeholderTextColor={PLACEHOLDER}
+            keyboardType="number-pad"
+            maxLength={2}
+            value={birthDay}
+            onChangeText={setBirthDay}
+          />
+        </View>
+
+        <TouchableOpacity style={styles.button} onPress={handleNext}>
+          <Text style={styles.btnText}>Next</Text>
+        </TouchableOpacity>
+      </KeyboardAwareScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: s(20),
-    backgroundColor: "#f2f4f9",
-  },
-  title: {
-    fontSize: s(20),
-    fontWeight: "700",
-    marginBottom: vs(20),
-  },
-  label: {
+  container: { flexGrow: 1, padding: s(20), alignItems: "center" },
+  title: { fontSize: s(22), fontWeight: "700", marginBottom: vs(10) },
+  label: { fontSize: s(12), fontWeight: "600", color: LABEL, marginBottom: vs(6), alignSelf: "flex-start" },
+  lineInput: {
+    width: "100%",
+    paddingVertical: vs(10),
     fontSize: s(14),
-    fontWeight: "600",
-    alignSelf: "flex-start",
-    marginBottom: vs(8),
+    backgroundColor: "transparent",
+    borderBottomWidth: 1,
+    borderBottomColor: LINE,
   },
-  input: {
-    width: "100%",
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: s(10),
-    padding: s(12),
-    marginBottom: vs(15),
-    backgroundColor: "#fff",
-  },
-  nameRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    width: "100%",
-  },
-  nameInput: {
-    flex: 1,
-    marginHorizontal: s(3),
-  },
-  dateRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    width: "100%",
-    marginBottom: vs(20),
-  },
-  dateInput: {
-    flex: 1,
-    textAlign: "center",
-    marginHorizontal: s(4),
-  },
+  dateRow: { flexDirection: "row", width: "100%", gap: s(10), marginBottom: vs(6) },
+  dateInput: { flex: 1, textAlign: "center" },
   button: {
     backgroundColor: PRIMARY_GREEN,
-    padding: vs(14),
+    paddingVertical: vs(14),
     borderRadius: s(12),
     alignItems: "center",
     width: "100%",
+    marginTop: vs(14),
   },
-  btnText: {
-    color: "#fff",
-    fontSize: s(16),
-    fontWeight: "600",
-  },
+  btnText: { color: "#fff", fontSize: s(16), fontWeight: "700" },
 });

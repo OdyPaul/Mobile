@@ -1,4 +1,3 @@
-// app/setup/Confirm.jsx
 import React, { useEffect, useRef, useState } from "react";
 import {
   View, Text, Image, StyleSheet, ScrollView,
@@ -10,7 +9,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { s, vs } from "react-native-size-matters";
 import * as ImageManipulator from "expo-image-manipulator";
 import { isAddress, getAddress } from "ethers";
-
 import { createVerificationRequest } from "../../features/verification/verificationSlice";
 import { uploadSelfie, uploadId } from "../../features/photo/photoSlice";
 
@@ -43,14 +41,11 @@ const safeParse = (data) => {
 const normalizeDid = (candidate) => {
   if (!candidate) return null;
   try {
-    // Accept did:polygon:0x..., plain 0x..., or db-stored 0x...
     let addr = candidate.startsWith("did:polygon:")
       ? candidate.slice("did:polygon:".length)
       : candidate;
-
     if (!addr.startsWith("0x")) return null;
     if (!isAddress(addr)) return null;
-
     return `did:polygon:${getAddress(addr)}`;
   } catch {
     return null;
@@ -58,26 +53,22 @@ const normalizeDid = (candidate) => {
 };
 
 export default function Confirm() {
-  const { personal, education, selfieUri, idUri, idType } = useLocalSearchParams();
+  const { personal, education, selfieUri, idUri, idType, idNumber } = useLocalSearchParams();
   const router = useRouter();
   const dispatch = useDispatch();
-
   const reduxUser = useSelector((s) => s.auth.user);
 
   const [did, setDid] = useState(null);
   const [loading, setLoading] = useState(false);
-  const inFlightRef = useRef(false); // hard guard vs double submit
+  const inFlightRef = useRef(false);
 
-  // Resolve DID once (walletSession → Redux → AsyncStorage)
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        // 1) walletConnect persisted address
         const walletSessionRaw = await AsyncStorage.getItem("walletSession");
         const walletAddr = walletSessionRaw ? JSON.parse(walletSessionRaw)?.address : null;
 
-        // 2) redux user (new flat or older nested shapes)
         const reduxAddr =
           reduxUser?.did ||
           reduxUser?.walletAddress ||
@@ -85,7 +76,6 @@ export default function Confirm() {
           reduxUser?.user?.walletAddress ||
           null;
 
-        // 3) storage fallback
         const userRaw = await AsyncStorage.getItem("user");
         const stored = userRaw ? JSON.parse(userRaw) : null;
         const storedAddr =
@@ -98,8 +88,7 @@ export default function Confirm() {
         const chosen = walletAddr || reduxAddr || storedAddr || null;
         const normalized = normalizeDid(chosen);
         if (mounted) setDid(normalized);
-        console.log("🔗 DID candidate:", chosen, "→", normalized);
-      } catch (e) {
+      } catch {
         if (mounted) setDid(null);
       }
     })();
@@ -109,39 +98,44 @@ export default function Confirm() {
   const personalData = safeParse(personal);
   const educationData = safeParse(education);
 
+  const prettyIdType = {
+    philsys: "PhilSys (National ID)",
+    student_psau: "Student ID (PSAU)",
+    passport: "Philippine Passport",
+    drivers_license: "Driver’s License",
+    sss_umid: "SSS UMID",
+    philhealth: "PhilHealth ID",
+    tin: "TIN ID",
+    postal: "Postal ID",
+    voter: "Voter’s ID",
+    prc: "PRC ID",
+    gsis: "GSIS ID",
+  };
+
+  const fmtDate = (iso) => {
+    try { return iso ? new Date(iso).toISOString().slice(0, 10) : "—"; } catch { return "—"; }
+  };
+
   const validate = () => {
-    if (!did) {
-      Alert.alert("Link wallet", "Please link your wallet before submitting.");
-      return false;
-    }
+    if (!did) { Alert.alert("Link wallet", "Please link your wallet before submitting."); return false; }
     if (!personalData?.fullName || !personalData?.address || !personalData?.birthPlace || !personalData?.birthDate) {
-      Alert.alert("Missing info", "Personal information is incomplete.");
-      return false;
+      Alert.alert("Missing info", "Personal information is incomplete."); return false;
     }
     if (!educationData?.highSchool || !educationData?.admissionDate || !educationData?.graduationDate) {
-      Alert.alert("Missing info", "Education information is incomplete.");
-      return false;
+      Alert.alert("Missing info", "Education information is incomplete."); return false;
     }
-    if (!selfieUri || !idUri) {
-      Alert.alert("Missing images", "Please provide both a selfie and a valid ID.");
-      return false;
-    }
+    if (!selfieUri || !idUri) { Alert.alert("Missing images", "Please provide both a selfie and a valid ID."); return false; }
     return true;
   };
 
   const handleSubmit = async () => {
-    if (inFlightRef.current) return; // prevent duplicates
+    if (inFlightRef.current) return;
     if (!validate()) return;
 
     inFlightRef.current = true;
     setLoading(true);
     try {
-      // Uploads happen ONLY after validation passed
-      const [shrunkSelfie, shrunkId] = await Promise.all([
-        shrink(selfieUri),
-        shrink(idUri),
-      ]);
-
+      const [shrunkSelfie, shrunkId] = await Promise.all([shrink(selfieUri), shrink(idUri)]);
       const [selfieRes, idRes] = await Promise.all([
         dispatch(uploadSelfie({ uri: shrunkSelfie, name: "selfie.jpg", type: "image/jpeg" })).unwrap(),
         dispatch(uploadId({ uri: shrunkId, name: "id.jpg", type: "image/jpeg" })).unwrap(),
@@ -151,21 +145,20 @@ export default function Confirm() {
       const idImageId = idRes?._id || idRes?.id;
       if (!selfieImageId || !idImageId) throw new Error("Upload response missing ids");
 
-      const result = await dispatch(
+      await dispatch(
         createVerificationRequest({
           personal: personalData,
           education: educationData,
           selfieImageId,
           idImageId,
-          did, // normalized did:polygon:…
+          did,
+          idMeta: { idType, idNumber },
         })
       ).unwrap();
 
-      console.log("✅ Verification submit OK:", result);
       Alert.alert("✅ Success", "Verification submitted successfully!");
       router.push("/(main)/settings");
     } catch (err) {
-      console.log("💥 Submit flow FAILED:", err?.message || err);
       Alert.alert("Error", String(err?.message || "Submission failed"));
     } finally {
       inFlightRef.current = false;
@@ -179,40 +172,37 @@ export default function Confirm() {
       <Text style={styles.title}>Confirm Your Info</Text>
 
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Personal Info</Text>
-        <Text>Full Name: {personalData.fullName || "—"}</Text>
-        <Text>Address: {personalData.address || "—"}</Text>
-        <Text>Place of Birth: {personalData.birthPlace || "—"}</Text>
-        <Text>Date of Birth: {personalData.birthDate || "—"}</Text>
+        <Text style={styles.sectionTitle}>Personal</Text>
+        <View style={styles.row}><Text style={styles.key}>Full name</Text><Text style={styles.val}>{personalData.fullName || "—"}</Text></View>
+        <View style={styles.row}><Text style={styles.key}>Address</Text><Text style={styles.val}>{personalData.address || "—"}</Text></View>
+        <View style={styles.row}><Text style={styles.key}>Birth place</Text><Text style={styles.val}>{personalData.birthPlace || "—"}</Text></View>
+        <View style={styles.row}><Text style={styles.key}>Birth date</Text><Text style={styles.val}>{fmtDate(personalData.birthDate)}</Text></View>
       </View>
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Education</Text>
-        <Text>High School: {educationData.highSchool || "—"}</Text>
-        <Text>Admission: {educationData.admissionDate || "—"}</Text>
-        <Text>Graduation: {educationData.graduationDate || "—"}</Text>
+        <View style={styles.row}><Text style={styles.key}>High School</Text><Text style={styles.val}>{educationData.highSchool || "—"}</Text></View>
+        <View style={styles.row}><Text style={styles.key}>Admission to PSAU</Text><Text style={styles.val}>{educationData.admissionDate || "—"}</Text></View>
+        <View style={styles.row}><Text style={styles.key}>Graduation</Text><Text style={styles.val}>{educationData.graduationDate || "—"}</Text></View>
       </View>
 
-      {selfieUri && (
+      {selfieUri ? (
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Selfie</Text>
-          <Image source={{ uri: selfieUri }} style={styles.image} />
+          <Image source={{ uri: String(selfieUri) }} style={styles.image} />
         </View>
-      )}
+      ) : null}
 
-      {idUri && (
+      {idUri ? (
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>ID</Text>
-          <Text>ID Type: {idType || "—"}</Text>
-          <Image source={{ uri: idUri }} style={styles.image} />
+          <Text style={styles.sectionTitle}>Valid ID</Text>
+          <View style={styles.row}><Text style={styles.key}>Type</Text><Text style={styles.val}>{prettyIdType[String(idType)] || String(idType) || "—"}</Text></View>
+          {idNumber ? <View style={styles.row}><Text style={styles.key}>ID Number</Text><Text style={styles.val}>{String(idNumber)}</Text></View> : null}
+          <Image source={{ uri: String(idUri) }} style={styles.image} />
         </View>
-      )}
+      ) : null}
 
-      <TouchableOpacity
-        style={[styles.button, (loading || !did) && { opacity: 0.6 }]}
-        onPress={handleSubmit}
-        disabled={loading || !did}
-      >
+      <TouchableOpacity style={[styles.button, (loading || !did) && { opacity: 0.6 }]} onPress={handleSubmit} disabled={loading || !did}>
         {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Submit</Text>}
       </TouchableOpacity>
     </ScrollView>
@@ -222,10 +212,13 @@ export default function Confirm() {
 const styles = StyleSheet.create({
   container: { flexGrow: 1, padding: s(20), alignItems: "center", backgroundColor: "#f2f4f9" },
   background: { position: "absolute", top: 0, right: 0, left: 0, bottom: 0, backgroundColor: "#E6F0FF", borderRadius: 50, zIndex: -1 },
-  title: { fontSize: s(24), fontWeight: "700", marginBottom: vs(20), textAlign: "center" },
-  sectionTitle: { fontSize: s(18), fontWeight: "600", marginBottom: vs(10) },
-  card: { backgroundColor: "#fff", padding: s(15), borderRadius: s(12), marginBottom: vs(15), width: "100%", shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 10, elevation: 3 },
+  title: { fontSize: s(24), fontWeight: "700", marginBottom: vs(16), textAlign: "center" },
+  sectionTitle: { fontSize: s(16), fontWeight: "700", marginBottom: vs(10) },
+  card: { backgroundColor: "#fff", padding: s(15), borderRadius: s(12), marginBottom: vs(14), width: "100%", shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 8, elevation: 2 },
+  row: { flexDirection: "row", justifyContent: "space-between", gap: s(10), marginBottom: vs(6) },
+  key: { color: "#6b7280", fontWeight: "600", width: "45%" },
+  val: { color: "#111827", flex: 1, textAlign: "right" },
   image: { width: "100%", height: 200, borderRadius: s(10), marginTop: vs(10), resizeMode: "cover" },
-  button: { backgroundColor: "#00B365", paddingVertical: vs(12), paddingHorizontal: s(30), borderRadius: s(10), marginTop: vs(20), width: "90%", alignItems: "center" },
-  buttonText: { color: "#fff", fontSize: s(18), fontWeight: "600" },
+  button: { backgroundColor: "#00B365", paddingVertical: vs(12), borderRadius: s(10), marginTop: vs(16), width: "90%", alignItems: "center" },
+  buttonText: { color: "#fff", fontSize: s(18), fontWeight: "700" },
 });

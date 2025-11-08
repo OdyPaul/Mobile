@@ -11,14 +11,17 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSCameraUsageDescription": "This app uses the camera to detect faces."
-      }
+        "NSCameraUsageDescription": "This app uses the camera to detect faces.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "com.psau.credpocket"
     },
     "android": {
       "permissions": [
         "CAMERA",
         "android.permission.CAMERA"
       ],
+
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
