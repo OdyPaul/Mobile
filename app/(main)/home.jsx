@@ -16,8 +16,9 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { moderateScale as ms } from "react-native-size-matters";
 import * as ImagePicker from "expo-image-picker";
+import { useSelector } from "react-redux";
 // Adjust this path if your file structure differs:
-import Scan from "../assets/components/scan";
+import Scan from "../../assets/components/scan";
 
 const { width, height } = Dimensions.get("window");
 const BOX_W = Math.round(width * 0.75);
@@ -26,9 +27,15 @@ const BOX_H = Math.round(height * 0.55);
 export default function Home() {
   const router = useRouter();
 
+  // Read user's full name from Redux (adjust path if your shape differs)
+  const fullName =
+    useSelector((state) => state?.auth?.user?.fullName) ||
+    useSelector((state) => state?.auth?.user?.name) ||
+    "User";
+
   const [menuOpen, setMenuOpen] = React.useState(false);
-  const [addOpen, setAddOpen] = React.useState(false);            // modal for Add Credential
-  const [isScanning, setIsScanning] = React.useState(false);      // overlay for Scan
+  const [addOpen, setAddOpen] = React.useState(false); // modal for Add Credential
+  const [isScanning, setIsScanning] = React.useState(false); // overlay for Scan
   const [galleryBusy, setGalleryBusy] = React.useState(false);
   const [pickedImageUri, setPickedImageUri] = React.useState(null); // passed to Scan
   const navigateOnceRef = React.useRef(false);
@@ -85,26 +92,33 @@ export default function Home() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Top row icons (right corner) */}
+      {/* Top bar: notif (left) — fullName (center) — profile (right) */}
       <View style={styles.topRow}>
-        <View style={{ flex: 1 }} />
-        <Pressable
-          accessibilityRole="button"
-          hitSlop={10}
-          style={styles.iconBtn}
-          onPress={() => router.push("/notifications")}
-        >
-          <Ionicons name="notifications-outline" size={ms(24)} color="#111827" />
-        </Pressable>
-        <View style={{ width: ms(8) }} />
-        <Pressable
-          accessibilityRole="button"
-          hitSlop={10}
-          style={styles.iconBtn}
-          onPress={() => setMenuOpen((v) => !v)}
-        >
-          <Ionicons name="person-circle-outline" size={ms(26)} color="#111827" />
-        </Pressable>
+        <View style={styles.iconWrap}>
+          <Pressable
+            accessibilityRole="button"
+            hitSlop={10}
+            style={styles.iconBtn}
+            onPress={() => router.push("/activity")}
+          >
+            <Ionicons name="notifications-outline" size={ms(24)} color="#111827" />
+          </Pressable>
+        </View>
+
+        <Text style={styles.userName} numberOfLines={1}>
+          {fullName}
+        </Text>
+
+        <View style={styles.iconWrap}>
+          <Pressable
+            accessibilityRole="button"
+            hitSlop={10}
+            style={styles.iconBtn}
+            onPress={() => setMenuOpen((v) => !v)}
+          >
+            <Ionicons name="person-circle-outline" size={ms(26)} color="#111827" />
+          </Pressable>
+        </View>
       </View>
 
       {/* Dismiss dropdown if tapping outside */}
@@ -121,17 +135,17 @@ export default function Home() {
             style={styles.menuItem}
             onPress={() => {
               setMenuOpen(false);
-              router.push("/subs/vc/settings");
+              router.push("/settings");
             }}
           >
-            <Text style={styles.menuText}>Settings VC</Text>
+            <Text style={styles.menuText}>Settings</Text>
           </Pressable>
           <View style={styles.menuDivider} />
           <Pressable
             style={styles.menuItem}
             onPress={() => {
               setMenuOpen(false);
-              router.push("/profile");
+              router.push("/subs/settings/profile");
             }}
           >
             <Text style={styles.menuText}>View Profile</Text>
@@ -143,7 +157,7 @@ export default function Home() {
       <View style={styles.center}>
         {/* Request Credential button */}
         <Pressable
-          onPress={() => router.push("/subs/vc/request")} // adjust if you have a different route
+          onPress={() => router.push("/subs/home/request_vc")} // adjust route if needed
           style={styles.requestBtn}
         >
           <Ionicons name="mail-outline" size={ms(18)} color="#fff" />
@@ -214,7 +228,7 @@ export default function Home() {
       {isScanning && (
         <View style={styles.scannerOverlay}>
           <Scan
-            imageUri={pickedImageUri /* optional: Decode still image if Scan supports it */}
+            imageUri={pickedImageUri /* optional: decode still image if Scan supports it */}
             onCancel={() => setIsScanning(false)}
             onComplete={goDetail}
           />
@@ -227,16 +241,29 @@ export default function Home() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },
 
-  // Top-right icons
+  // Top bar
   topRow: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: ms(12),
     paddingTop: ms(34),
   },
+  iconWrap: {
+    width: ms(44), // keep left & right equal width to perfectly center middle text
+    alignItems: "center",
+    justifyContent: "center",
+  },
   iconBtn: {
     padding: ms(6),
     borderRadius: ms(999),
+  },
+  userName: {
+    flex: 1,
+    textAlign: "center",
+    fontSize: ms(16),
+    fontWeight: "700",
+    color: "#111827",
+    paddingHorizontal: ms(6),
   },
 
   // Dropdown
@@ -345,7 +372,10 @@ const styles = StyleSheet.create({
   // Scanner overlay
   scannerOverlay: {
     position: "absolute",
-    top: 0, left: 0, right: 0, bottom: 0,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: "#000",
     zIndex: 999,
   },
