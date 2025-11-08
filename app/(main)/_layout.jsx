@@ -1,7 +1,7 @@
 // app/MainLayout.jsx
 import { Tabs, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import {
   Platform,
   View,
@@ -14,13 +14,14 @@ import {
   Modal,
   Pressable,
   StyleSheet,
+  AppState,                      // ← NEW
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage"; // ← NEW
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import * as NavigationBar from "expo-navigation-bar";
 import Spinner from "../../assets/components/spinner";
 import { clearWalletConnectCache } from "../../hooks/clearWalletConnectCache";
-// NOTE: ensure the import case matches your file name. If the file is Scan.jsx, use "Scan" here:
 import Scan from "../../assets/components/scan";
 import { useWallet } from "../../assets/store/walletStore";
 
@@ -32,10 +33,25 @@ export default function MainLayout() {
   const slideAnim = useRef(new Animated.Value(0)).current;
   const screenHeight = Dimensions.get("window").height;
   const router = useRouter();
-  const [refreshing, setRefreshing] = useState(false);
+
+  // ↓ We’ll actually use this state with the RefreshControl now
+  const [refreshing, setRefreshing] = useState(false);        // (kept)
+  const [authToken, setAuthToken] = useState(null);           // ← NEW
 
   const vcs = useWallet((s) => s.vcs);
   const loadWallet = useWallet((s) => s.load);
+
+  // Read mobile auth token once (adjust key if your app stores it differently)
+  useEffect(() => {
+    (async () => {
+      try {
+        const t = await AsyncStorage.getItem("authToken");
+        setAuthToken(t || null);
+      } catch {
+        setAuthToken(null);
+      }
+    })();
+  }, []);
 
   // hard guard to avoid multiple navigations
   const navigateOnceRef = useRef(false);
@@ -43,10 +59,46 @@ export default function MainLayout() {
     if (!isScanning) navigateOnceRef.current = false;
   }, [isScanning]);
 
+  // API base (Expo public env var) — change if you use another config source
+  const API_BASE = useMemo(
+    () => process.env.EXPO_PUBLIC_API_BASE || "",             // ← NEW
+    []
+  );
+
+  // ---- Anchoring sync (minimal) ----
+  const refreshAnchoring = useCallback(async () => {
+    try {
+      const sync = useWallet.getState().syncAnchoring;
+      if (typeof sync !== "function") return; // guard if store not updated yet
+
+      // Only attempt server sync if we have both base & token; otherwise it's a no-op
+      if (API_BASE && authToken) {
+        const { updated } = await sync({
+          apiBase: API_BASE,
+          authToken,
+          batchSize: 150, // optional
+        });
+        // Optional: show a toast/snackbar here if updated > 0
+        // e.g., Toast.show(`${updated} credential(s) updated`);
+      }
+    } catch {
+      // swallow — offline or unauthenticated is fine; local cache remains
+    }
+  }, [API_BASE, authToken]);
+
   const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1500);
-  }, []);
+    (async () => {
+      setRefreshing(true);
+      try {
+        // Keep existing behavior (ensure wallet list is current) …
+        await loadWallet();
+        // …and also sync anchoring metadata from server into local storage
+        await refreshAnchoring();
+      } finally {
+        setRefreshing(false);
+      }
+    })();
+  }, [loadWallet, refreshAnchoring]);
 
   useEffect(() => {
     NavigationBar.setBackgroundColorAsync("#000000");
@@ -59,10 +111,27 @@ export default function MainLayout() {
     })();
   }, []);
 
-  // Ensure VCs are loaded for picker
+  // Ensure VCs are loaded for picker + do an initial anchoring sync
   useEffect(() => {
-    loadWallet().catch(() => {});
-  }, [loadWallet]);
+    (async () => {
+      try {
+        await loadWallet();
+      } finally {
+        // fire-and-forget; no spinner tie-in needed here
+        refreshAnchoring();
+      }
+    })();
+  }, [loadWallet, refreshAnchoring]);
+
+  // Foreground sync: whenever the app comes to foreground, refresh anchoring state
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        refreshAnchoring();
+      }
+    });
+    return () => sub.remove();
+  }, [refreshAnchoring]);
 
   useEffect(() => {
     Animated.timing(slideAnim, {
@@ -249,8 +318,8 @@ export default function MainLayout() {
         contentContainerStyle={{ flexGrow: 1 }}
         refreshControl={
           <RefreshControl
-            refreshing={false}
-            onRefresh={onRefresh}
+            refreshing={refreshing}              // ← CHANGED: was hard-coded false
+            onRefresh={onRefresh}                // ← CHANGED: calls wallet + syncAnchoring
             tintColor="transparent"
             colors={["transparent"]}
             progressBackgroundColor="transparent"
