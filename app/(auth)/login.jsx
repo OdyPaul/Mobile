@@ -13,7 +13,7 @@ import * as LocalAuthentication from "expo-local-authentication";
 import verificationService from "../../features/verification/verificationService";
 import useBiometricPref from "../../hooks/useBiometricPref";
 import { normalizeVerificationList, hasPending, STORAGE_KEYS } from "../../lib";
-
+import { refreshNotifications } from "../../features/notif/notifSlice";
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -126,6 +126,8 @@ export default function Login() {
             dispatch(reset());
             return;
           }
+        // 🔔 Preload activity items so Activity has data instantly
+        dispatch(refreshNotifications());
 
           const res = await verificationService.getMyVerificationRequests();
           const list = normalizeVerificationList(res);
