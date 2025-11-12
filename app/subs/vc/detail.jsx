@@ -15,6 +15,7 @@ import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { scale as s, verticalScale as vs, moderateScale as ms } from "react-native-size-matters";
 import { readVC } from "../../../lib/vcStorage";
 import { decodeJwsPayload } from "../../../lib/jwsUtils";
 import { useWallet } from "../../../assets/store/walletStore";
@@ -23,7 +24,6 @@ global.Buffer = global.Buffer || Buffer;
 
 const API_BASE = process.env.EXPO_PUBLIC_API_URL || "";
 
-// Known explorers
 const EXPLORERS = {
   80002: {
     label: "Polygon Amoy",
@@ -38,7 +38,16 @@ const EXPLORERS = {
 };
 
 const short = (x) => (x ? `${String(x).slice(0, 8)}…${String(x).slice(-6)}` : "—");
-const fmt = (d) => (d ? new Date(d).toLocaleString() : "—");
+const fmtDateTime = (d) => (d ? new Date(d).toLocaleString() : "—");
+const fmtDateOnly = (d) => {
+  if (!d) return "—";
+  const date = new Date(d);
+  if (isNaN(date.getTime())) return "—";
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const da = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${da}`;
+};
 
 export default function VcDetail() {
   const { id } = useLocalSearchParams();
@@ -47,7 +56,7 @@ export default function VcDetail() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const remove = useWallet((s) => s.remove);
-  const vcs = useWallet((s) => s.vcs); // re-read when store updates
+  const vcs = useWallet((s) => s.vcs);
 
   const loadLocal = useCallback(async () => {
     const v = await readVC(String(id || ""));
@@ -145,33 +154,56 @@ export default function VcDetail() {
   const anchored = (a.state || "").toLowerCase() === "anchored";
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: "#F9FAFB" }}>
       {/* Header */}
-      <View style={[styles.header, { paddingTop: (insets?.top ?? 0) + 8, paddingBottom: 10 }]}>
+      <View style={[styles.header, { paddingTop: (insets?.top ?? 0) + vs(8), paddingBottom: vs(10) }]}>
         <View style={styles.headerRow}>
           <TouchableOpacity style={styles.backRow} onPress={goBack} hitSlop={8}>
-            <Ionicons name="chevron-back" size={22} color="#111827" />
+            <Ionicons name="chevron-back" size={s(22)} color="#111827" />
             <Text style={styles.backText}>My Credentials</Text>
           </TouchableOpacity>
 
           <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <TouchableOpacity onPress={refreshStatus} hitSlop={10} style={{ padding: 6, marginRight: 4 }}>
-              <Ionicons name="refresh" size={20} color="#111827" />
+            <TouchableOpacity onPress={refreshStatus} hitSlop={10} style={{ padding: ms(6), marginRight: ms(4) }}>
+              <Ionicons name="refresh" size={s(20)} color="#111827" />
             </TouchableOpacity>
             <TouchableOpacity onPress={confirmRemove} hitSlop={10} style={styles.trashBtn}>
-              <Ionicons name="trash-outline" size={20} color="#ef4444" />
+              <Ionicons name="trash-outline" size={s(20)} color="#ef4444" />
             </TouchableOpacity>
           </View>
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: 16 }}>
-        {/* Basic details */}
+      <ScrollView contentContainerStyle={{ padding: ms(16) }}>
+        {/* BASIC DETAILS — match Activity card look */}
         <View style={styles.card}>
-          <Text style={styles.title}>{vc.meta?.title || "Credential"}</Text>
-          <Text style={styles.item}><Text style={styles.key}>Name: </Text>{vc.meta?.fullName || "—"}</Text>
-          <Text style={styles.item}><Text style={styles.key}>Student #: </Text>{vc.meta?.studentNumber || "—"}</Text>
-          <Text style={styles.item}><Text style={styles.key}>Issued: </Text>{vc.meta?.issuedAt || "—"}</Text>
+          <Text style={styles.cardTitle}>Details</Text>
+
+          <View style={styles.row}>
+            <Text style={styles.key}>VC</Text>
+            <Text style={styles.val} numberOfLines={1}>
+              {vc.meta?.title || vc.meta?.type || "Diploma"}
+            </Text>
+          </View>
+
+          <View style={styles.row}>
+            <Text style={styles.key}>Name</Text>
+            <Text style={styles.val} numberOfLines={1}>
+              {vc.meta?.fullName || "—"}
+            </Text>
+          </View>
+
+          <View style={styles.row}>
+            <Text style={styles.key}>Student #</Text>
+            <Text style={styles.val} numberOfLines={1}>
+              {vc.meta?.studentNumber || "—"}
+            </Text>
+          </View>
+
+          <View style={styles.rowLast}>
+            <Text style={styles.key}>Issued</Text>
+            <Text style={styles.val}>{fmtDateOnly(vc.meta?.issuedAt)}</Text>
+          </View>
         </View>
 
         {/* Anchoring info */}
@@ -185,24 +217,47 @@ export default function VcDetail() {
             </View>
           </View>
 
-          <Text style={styles.item}><Text style={styles.key}>Chain: </Text>{chainLabel}</Text>
-          <Text style={styles.item}><Text style={styles.key}>Batch: </Text>{a.batch_id || "—"}</Text>
-          <Text style={styles.item}><Text style={styles.key}>Anchored At: </Text>{fmt(a.anchored_at)}</Text>
+          <View style={styles.row}>
+            <Text style={styles.key}>Chain</Text>
+            <Text style={styles.val}>{chainLabel}</Text>
+          </View>
 
-          <View style={[styles.item, { flexDirection: "row", flexWrap: "wrap" }]}>
-            <Text style={styles.key}>Tx: </Text>
+          <View style={styles.row}>
+            <Text style={styles.key}>Batch</Text>
+            <Text style={styles.val}>{a.batch_id || "—"}</Text>
+          </View>
+
+          <View style={styles.row}>
+            <Text style={styles.key}>Anchored At</Text>
+            <Text style={styles.val}>{fmtDateTime(a.anchored_at)}</Text>
+          </View>
+
+          <View style={styles.rowLast}>
+            <Text style={styles.key}>Tx</Text>
             {a.tx_hash ? (
               <TouchableOpacity onPress={openExplorerTx} hitSlop={6}>
                 <Text style={styles.txLink}>{short(a.tx_hash)} ↗</Text>
               </TouchableOpacity>
-            ) : <Text>—</Text>}
+            ) : (
+              <Text style={styles.val}>—</Text>
+            )}
           </View>
         </View>
 
-        {/* Subject blob */}
+        {/* Credential Subject with capped height + inner scroll */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Credential Subject</Text>
-          <Text selectable style={styles.mono}>{JSON.stringify(subj, null, 2)}</Text>
+          <View style={styles.subjectBox}>
+            <ScrollView
+              nestedScrollEnabled
+              showsVerticalScrollIndicator
+              contentContainerStyle={{ paddingRight: ms(6) }}
+            >
+              <Text selectable style={styles.mono}>
+                {JSON.stringify(subj, null, 2)}
+              </Text>
+            </ScrollView>
+          </View>
         </View>
       </ScrollView>
     </View>
@@ -210,30 +265,76 @@ export default function VcDetail() {
 }
 
 const styles = StyleSheet.create({
-  header: { backgroundColor: "#fff", borderBottomWidth: 1, borderBottomColor: "#e5e7eb", paddingHorizontal: 8 },
+  header: { backgroundColor: "#fff", borderBottomWidth: 1, borderBottomColor: "#e5e7eb", paddingHorizontal: ms(8) },
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   backRow: { flexDirection: "row", alignItems: "center" },
-  trashBtn: { padding: 6 },
-  backText: { marginLeft: 2, fontSize: 15, fontWeight: "700", color: "#111827" },
+  trashBtn: { padding: ms(6) },
+  backText: { marginLeft: ms(2), fontSize: s(15), fontWeight: "700", color: "#111827" },
 
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
 
-  card: { backgroundColor: "#fff", borderRadius: 12, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: "#e5e7eb" },
+  // Activity-like card style
+  card: {
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: ms(12),
+    padding: ms(14),
+    marginBottom: vs(12),
+    ...Platform.select({
+      android: { elevation: 1 },
+      ios: {
+        shadowColor: "#000",
+        shadowOpacity: 0.04,
+        shadowOffset: { width: 0, height: 2 },
+        shadowRadius: 6,
+      },
+    }),
+  },
+  cardTitle: { fontSize: s(16), fontWeight: "800", color: "#0F172A", marginBottom: vs(6) },
+
+  // Label/value rows (like your details sheet)
   rowBetween: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: vs(8),
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#E5E7EB",
+  },
+  rowLast: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingTop: vs(8),
+  },
+  key: { color: "#374151", fontWeight: "800" },
+  val: { color: "#0F172A", fontWeight: "700", maxWidth: "62%" },
 
-  title: { fontSize: 18, fontWeight: "800", marginBottom: 6 },
-  item: { marginTop: 6, lineHeight: 20 },
-  key: { fontWeight: "600" },
-  cardTitle: { fontWeight: "700", marginBottom: 6, fontSize: 16 },
+  mono: {
+    fontFamily: Platform.select({ ios: "Menlo", android: "monospace" }),
+    fontSize: s(12),
+    color: "#111827",
+  },
 
-  mono: { fontFamily: Platform.select({ ios: "Menlo", android: "monospace" }), fontSize: 12, color: "#111827" },
-
-  badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, borderWidth: 1 },
+  badge: { paddingHorizontal: ms(8), paddingVertical: vs(4), borderRadius: 999, borderWidth: 1 },
   badgeGreen: { backgroundColor: "#ecfdf5", borderColor: "#10b98122" },
   badgeGray: { backgroundColor: "#f3f4f6", borderColor: "#9ca3af22" },
-  badgeText: { fontSize: 12, fontWeight: "800" },
+  badgeText: { fontSize: s(12), fontWeight: "800" },
   badgeTextGreen: { color: "#065f46" },
   badgeTextGray: { color: "#374151" },
 
   txLink: { color: "#1d4ed8", fontWeight: "700", textDecorationLine: "underline" },
+
+  // Capped-height scroll area for subject
+  subjectBox: {
+    marginTop: vs(6),
+    maxHeight: vs(260),
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: ms(10),
+    padding: ms(10),
+    backgroundColor: "#FFFFFF",
+  },
 });

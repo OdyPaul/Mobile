@@ -17,7 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { moderateScale as ms } from "react-native-size-matters";
 import * as ImagePicker from "expo-image-picker";
 import { useSelector } from "react-redux";
-// Adjust this path if your file structure differs:
+import { selectUnreadCount } from "../../features/notif/notifSlice"; // ← adjust path if needed
 import Scan from "../../assets/components/scan";
 
 const { width, height } = Dimensions.get("window");
@@ -32,6 +32,9 @@ export default function Home() {
     useSelector((state) => state?.auth?.user?.fullName) ||
     useSelector((state) => state?.auth?.user?.name) ||
     "User";
+
+  // 🔔 unread count for badge
+  const unread = useSelector(selectUnreadCount) || 0;
 
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [addOpen, setAddOpen] = React.useState(false); // modal for Add Credential
@@ -99,9 +102,14 @@ export default function Home() {
             accessibilityRole="button"
             hitSlop={10}
             style={styles.iconBtn}
-            onPress={() => router.push("/activity")}
+            onPress={() => router.push("/(main)/activity")} // ← change to "/activity" if not in (main)
           >
             <Ionicons name="notifications-outline" size={ms(24)} color="#111827" />
+            {unread > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{unread > 99 ? "99+" : String(unread)}</Text>
+              </View>
+            )}
           </Pressable>
         </View>
 
@@ -252,6 +260,7 @@ const styles = StyleSheet.create({
     width: ms(44), // keep left & right equal width to perfectly center middle text
     alignItems: "center",
     justifyContent: "center",
+    position: "relative", // ← allow absolute-positioned badge
   },
   iconBtn: {
     padding: ms(6),
@@ -264,6 +273,28 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#111827",
     paddingHorizontal: ms(6),
+  },
+
+  // 🔴 badge styles
+  badge: {
+    position: "absolute",
+    top: ms(2),
+    right: ms(2),
+    minWidth: ms(16),
+    height: ms(16),
+    paddingHorizontal: ms(3),
+    borderRadius: ms(8),
+    backgroundColor: "#EF4444",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#fff",
+  },
+  badgeText: {
+    color: "#fff",
+    fontSize: ms(10),
+    fontWeight: "800",
+    lineHeight: ms(12),
   },
 
   // Dropdown

@@ -1,5 +1,5 @@
 // app/(main)/activity.jsx
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -128,14 +128,25 @@ export default function Activity() {
   const loading = useSelector(selectNotifLoading);
 
   const [refreshing, setRefreshing] = useState(false);
+
+  // Track if the list is at the very top
+  const atTopRef = useRef(true);
   const [atTop, setAtTop] = useState(true);
+  const updateTop = useCallback((y) => {
+    const isTop = (y ?? 0) <= 0.5; // small tolerance
+    if (isTop !== atTopRef.current) {
+      atTopRef.current = isTop;
+      setAtTop(isTop);
+    }
+  }, []);
 
   const doRefresh = useCallback(async () => {
-    if (!atTop) return; // extra guard
+    // guard: only allow refresh if at top
+    if (!atTopRef.current || refreshing) return;
     setRefreshing(true);
     try { await dispatch(refreshNotifications()); }
     finally { setRefreshing(false); }
-  }, [dispatch, atTop]);
+  }, [dispatch, refreshing]);
 
   useEffect(() => {
     if (!items?.length) dispatch(refreshNotifications());
@@ -182,21 +193,25 @@ export default function Activity() {
           </View>
         )}
         ListHeaderComponent={Header}
-        ListHeaderComponentStyle={styles.listHeaderStyle} // top spacing; no box look
+        ListHeaderComponentStyle={styles.listHeaderStyle}
         contentContainerStyle={{ paddingBottom: vs(80) }}
         contentInsetAdjustmentBehavior={Platform.OS === "ios" ? "automatic" : "never"}
         scrollEventThrottle={16}
-        onScroll={({ nativeEvent }) => {
-          const y = nativeEvent.contentOffset?.y || 0;
-          setAtTop(y <= 0);
-        }}
+        onScroll={({ nativeEvent }) => updateTop(nativeEvent.contentOffset?.y)}
+        // ✅ Only allow pull-to-refresh when at the top
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={doRefresh}
-            enabled={Platform.OS === "android" ? atTop : undefined} // Android: only at top
+            enabled={atTop}                            // both platforms
+            progressViewOffset={Platform.OS === "android" ? vs(60) : 0}
           />
         }
+        // ✅ iOS: prevent bounce (and thus the spinner) until scrolled to top
+        bounces={Platform.OS === "ios" ? atTop : undefined}
+        alwaysBounceVertical={Platform.OS === "ios" ? atTop : undefined}
+        // ✅ Android: avoid overscroll glow triggering mid-list pulls
+        overScrollMode={Platform.OS === "android" ? (atTop ? "always" : "never") : undefined}
         ListEmptyComponent={
           <View style={{ paddingTop: vs(40), alignItems: "center" }}>
             <Ionicons name="notifications-off-outline" size={s(28)} color="#9ca3af" />
@@ -212,7 +227,6 @@ export default function Activity() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#F9FAFB" },
 
-  // Header inside list, with NO box (no bg/border). Just spacing + row.
   listHeaderStyle: {
     paddingTop: vs(8),
     paddingHorizontal: ms(16),
@@ -226,14 +240,14 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: s(20), fontWeight: "800", color: "#111827" },
 
   sectionHdr: {
-    backgroundColor: "#EEF2FF",
+    backgroundColor: "rgba(170, 208, 142, 1)",
     paddingVertical: vs(8),
     paddingHorizontal: ms(12),
     borderRadius: ms(8),
     marginBottom: vs(10),
     marginHorizontal: ms(16),
   },
-  sectionHdrText: { color: "#4338CA", fontWeight: "800", fontSize: s(14) },
+  sectionHdrText: { color: "#2b6348ff", fontWeight: "800", fontSize: s(14) },
 
   itemWrap: {
     paddingLeft: ms(38),

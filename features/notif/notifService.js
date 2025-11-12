@@ -6,6 +6,15 @@ import verificationService from "../verification/verificationService";
 import { STORAGE_KEYS } from "../../lib";
 
 /* --------------------------------- config --------------------------------- */
+const LS_LAST_SEEN_AT = "notif:lastSeenAt";
+export async function getLastSeenAt() {
+  const raw = await AsyncStorage.getItem(LS_LAST_SEEN_AT);
+  return raw ? Number(raw) : 0;
+}
+
+export async function setLastSeenAt(ts) {
+  await AsyncStorage.setItem(LS_LAST_SEEN_AT, String(ts));
+}
 
 const ORIGIN = (
   process.env.EXPO_PUBLIC_API_URL ||

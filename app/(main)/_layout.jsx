@@ -9,14 +9,14 @@ import {
   Text,
   Animated,
   Dimensions,
-  ScrollView,
-  RefreshControl,
   Modal,
   Pressable,
   StyleSheet,
-  AppState,                      // ← NEW
+  AppState,
+  FlatList,
+  Image,
 } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage"; // ← NEW
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import * as NavigationBar from "expo-navigation-bar";
@@ -24,24 +24,49 @@ import Spinner from "../../assets/components/spinner";
 import { clearWalletConnectCache } from "../../hooks/clearWalletConnectCache";
 import Scan from "../../assets/components/scan";
 import { useWallet } from "../../assets/store/walletStore";
+import { scale as s, verticalScale as vs, moderateScale as ms } from "react-native-size-matters";
+
+/* ------------------------------ helpers ------------------------------ */
+const maskId = (id = "") => {
+  const sId = String(id);
+  const last = sId.slice(-4) || "0000";
+  return `•••• •••• •••• ${last}`;
+};
+
+const fmtDateOnly = (d) => {
+  if (!d) return "—";
+  const date = new Date(d);
+  if (isNaN(date.getTime())) return "—";
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const da = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${da}`;
+};
+
+const vcTypeUpper = (meta) => {
+  const raw = (meta?.abbr || meta?.type || meta?.title || "").toString().trim();
+  return raw ? raw.toUpperCase() : "VC";
+};
+
+const toTitle = (str = "") =>
+  String(str).toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+
+/* -------------------------------------------------------------------- */
 
 export default function MainLayout() {
   const insets = useSafeAreaInsets();
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [authToken, setAuthToken] = useState(null);
   const slideAnim = useRef(new Animated.Value(0)).current;
   const screenHeight = Dimensions.get("window").height;
   const router = useRouter();
 
-  // ↓ We’ll actually use this state with the RefreshControl now
-  const [refreshing, setRefreshing] = useState(false);        // (kept)
-  const [authToken, setAuthToken] = useState(null);           // ← NEW
-
   const vcs = useWallet((s) => s.vcs);
   const loadWallet = useWallet((s) => s.load);
 
-  // Read mobile auth token once (adjust key if your app stores it differently)
   useEffect(() => {
     (async () => {
       try {
@@ -53,36 +78,22 @@ export default function MainLayout() {
     })();
   }, []);
 
-  // hard guard to avoid multiple navigations
   const navigateOnceRef = useRef(false);
   useEffect(() => {
     if (!isScanning) navigateOnceRef.current = false;
   }, [isScanning]);
 
-  // API base (Expo public env var) — change if you use another config source
-  const API_BASE = useMemo(
-    () => process.env.EXPO_PUBLIC_API_BASE || "",             // ← NEW
-    []
-  );
+  const API_BASE = useMemo(() => process.env.EXPO_PUBLIC_API_BASE || "", []);
 
-  // ---- Anchoring sync (minimal) ----
   const refreshAnchoring = useCallback(async () => {
     try {
       const sync = useWallet.getState().syncAnchoring;
-      if (typeof sync !== "function") return; // guard if store not updated yet
-
-      // Only attempt server sync if we have both base & token; otherwise it's a no-op
+      if (typeof sync !== "function") return;
       if (API_BASE && authToken) {
-        const { updated } = await sync({
-          apiBase: API_BASE,
-          authToken,
-          batchSize: 150, // optional
-        });
-        // Optional: show a toast/snackbar here if updated > 0
-        // e.g., Toast.show(`${updated} credential(s) updated`);
+        await sync({ apiBase: API_BASE, authToken, batchSize: 150 });
       }
     } catch {
-      // swallow — offline or unauthenticated is fine; local cache remains
+      // ignore
     }
   }, [API_BASE, authToken]);
 
@@ -90,9 +101,7 @@ export default function MainLayout() {
     (async () => {
       setRefreshing(true);
       try {
-        // Keep existing behavior (ensure wallet list is current) …
         await loadWallet();
-        // …and also sync anchoring metadata from server into local storage
         await refreshAnchoring();
       } finally {
         setRefreshing(false);
@@ -111,24 +120,19 @@ export default function MainLayout() {
     })();
   }, []);
 
-  // Ensure VCs are loaded for picker + do an initial anchoring sync
   useEffect(() => {
     (async () => {
       try {
         await loadWallet();
       } finally {
-        // fire-and-forget; no spinner tie-in needed here
         refreshAnchoring();
       }
     })();
   }, [loadWallet, refreshAnchoring]);
 
-  // Foreground sync: whenever the app comes to foreground, refresh anchoring state
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") {
-        refreshAnchoring();
-      }
+      if (state === "active") refreshAnchoring();
     });
     return () => sub.remove();
   }, [refreshAnchoring]);
@@ -153,7 +157,7 @@ export default function MainLayout() {
     <>
       <StatusBar style="dark" backgroundColor="#fff" />
 
-      {/* VC Picker Modal */}
+      {/* VC Picker Modal (vertical cards) */}
       <Modal
         visible={pickerOpen}
         transparent
@@ -167,60 +171,91 @@ export default function MainLayout() {
         <View
           style={{
             position: "absolute",
-            left: 16,
-            right: 16,
+            left: ms(16),
+            right: ms(16),
             top: "18%",
             backgroundColor: "#fff",
-            borderRadius: 16,
-            padding: 14,
-            maxHeight: "64%",
+            borderRadius: ms(16),
+            padding: ms(14),
+            maxHeight: "68%",
           }}
         >
-          <Text style={{ fontWeight: "800", fontSize: 16, marginBottom: 10 }}>
+          <Text style={{ fontWeight: "800", fontSize: s(16), marginBottom: vs(10) }}>
             Choose a credential to share
           </Text>
-          <ScrollView>
-            {vcs.map((vc) => (
-              <TouchableOpacity
-                key={vc.id}
-                style={{
-                  paddingVertical: 12,
-                  borderBottomWidth: StyleSheet.hairlineWidth,
-                  borderBottomColor: "#e5e7eb",
-                }}
-                onPress={() => {
-                  setPickerOpen(false);
-                  setIsShareOpen(false);
-                  router.push(`/subs/vc/share?id=${encodeURIComponent(vc.id)}`);
-                }}
-              >
-                <Text style={{ fontWeight: "700" }}>
-                  {vc?.meta?.title || "Credential"}
-                </Text>
-                <Text style={{ color: "#475569" }}>
-                  {vc?.meta?.fullName || "—"}
-                </Text>
-                <Text style={{ color: "#94a3b8", fontSize: 12 }}>
-                  #{vc?.meta?.studentNumber || "—"}
-                </Text>
-              </TouchableOpacity>
-            ))}
-            {vcs.length === 0 && (
-              <Text style={{ color: "#6b7280", paddingVertical: 8 }}>
+
+          <FlatList
+            data={vcs}
+            keyExtractor={(vc) => String(vc.id)}
+            ItemSeparatorComponent={() => <View style={{ height: ms(12) }} />}
+            contentContainerStyle={{ paddingBottom: ms(8) }}
+            showsVerticalScrollIndicator
+            renderItem={({ item }) => {
+              const vcId = String(item.id ?? item.digest ?? item.key ?? "");
+              return (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => {
+                    setPickerOpen(false);
+                    setIsShareOpen(false);
+                    router.push(`/subs/vc/share?id=${encodeURIComponent(vcId)}`);
+                  }}
+                  style={styles.shareCard}
+                >
+                  {/* Decorative blobs */}
+                  <View style={styles.shareCardBg1} />
+                  <View style={styles.shareCardBg2} />
+
+                  {/* PSAU logo (top-right) */}
+                  <View style={styles.shareLogoBadge}>
+                    <Image
+                      source={require("../../assets/images/psau_logo.png")}
+                      style={styles.shareCardLogo}
+                      resizeMode="contain"
+                    />
+                  </View>
+
+                  {/* Text block */}
+                  <View style={{ gap: vs(6) }}>
+                    <Text style={styles.shareCardLabel}>
+                      {toTitle(item?.meta?.type || "Verifiable Credential")}
+                    </Text>
+                    <Text style={styles.shareCardNumber}>{maskId(vcId)}</Text>
+                    <Text style={styles.shareCardName} numberOfLines={1}>
+                      {item?.meta?.fullName || "—"}
+                    </Text>
+
+                    <View style={styles.shareCardMetaRow}>
+                      <View style={styles.shareCardTag}>
+                        <Text style={styles.shareCardTagText} numberOfLines={1}>
+                          {vcTypeUpper(item?.meta)}
+                        </Text>
+                      </View>
+                      <Text style={styles.shareIssuedText}>
+                        Issued {fmtDateOnly(item?.meta?.issuedAt)}
+                      </Text>
+                    </View>
+                  </View>
+                </Pressable>
+              );
+            }}
+            ListEmptyComponent={
+              <Text style={{ color: "#6b7280", paddingVertical: vs(8) }}>
                 No credentials yet. Use “Collect”.
               </Text>
-            )}
-          </ScrollView>
+            }
+          />
 
           <TouchableOpacity
             onPress={() => setPickerOpen(false)}
-            style={{ alignSelf: "center", marginTop: 8, padding: 8 }}
+            style={{ alignSelf: "center", marginTop: vs(8), padding: ms(8) }}
           >
             <Text style={{ color: "#16A34A", fontWeight: "700" }}>Close</Text>
           </TouchableOpacity>
         </View>
       </Modal>
 
+      {/* Shade when share panel is open */}
       {isShareOpen && (
         <TouchableOpacity
           activeOpacity={1}
@@ -237,6 +272,7 @@ export default function MainLayout() {
         />
       )}
 
+      {/* Bottom share panel */}
       <Animated.View
         style={{
           position: "absolute",
@@ -277,9 +313,7 @@ export default function MainLayout() {
               alignItems: "center",
               justifyContent: "center",
             }}
-            onPress={() => {
-              setPickerOpen(true);
-            }}
+            onPress={() => setPickerOpen(true)}
           >
             <Ionicons name="barcode-outline" size={28} color="#fff" style={{ marginBottom: 5 }} />
             <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>
@@ -314,19 +348,8 @@ export default function MainLayout() {
         </View>
       </Animated.View>
 
-      <ScrollView
-        contentContainerStyle={{ flexGrow: 1 }}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}              // ← CHANGED: was hard-coded false
-            onRefresh={onRefresh}                // ← CHANGED: calls wallet + syncAnchoring
-            tintColor="transparent"
-            colors={["transparent"]}
-            progressBackgroundColor="transparent"
-            style={{ backgroundColor: "transparent" }}
-          />
-        }
-      >
+      {/* Root container (no ScrollView here) */}
+      <View style={{ flex: 1 }}>
         {refreshing && (
           <View
             style={{
@@ -353,7 +376,7 @@ export default function MainLayout() {
             tabBarInactiveTintColor: "#A1A1AA",
             tabBarStyle: {
               backgroundColor: "#fff",
-              height: tabBarHeight,
+              height: (Platform.OS === "ios" ? 84 : 64) + (insets.bottom ?? 0),
               paddingTop: 6,
               paddingBottom: (insets.bottom ?? 8) + 10,
               borderTopWidth: 0.5,
@@ -407,7 +430,7 @@ export default function MainLayout() {
             }}
           />
         </Tabs>
-      </ScrollView>
+      </View>
 
       <TouchableOpacity
         onPress={() => setIsShareOpen(!isShareOpen)}
@@ -451,7 +474,6 @@ export default function MainLayout() {
             onComplete={(vc) => {
               if (navigateOnceRef.current) return;
               navigateOnceRef.current = true;
-
               setIsScanning(false);
               requestAnimationFrame(() => {
                 const id = vc?.id ? String(vc.id) : "";
@@ -465,3 +487,81 @@ export default function MainLayout() {
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  // Share-picker cards (vertical)
+  shareCard: {
+    height: vs(130),
+    borderRadius: ms(14),
+    overflow: "hidden",
+    backgroundColor: "#065F46", // deep green
+    justifyContent: "center",
+    padding: ms(16),
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.06)",
+  },
+  shareCardBg1: {
+    position: "absolute",
+    width: ms(180),
+    height: ms(180),
+    borderRadius: ms(90),
+    backgroundColor: "#047857",
+    opacity: 0.35,
+    top: -vs(70),
+    right: -ms(30),
+  },
+  shareCardBg2: {
+    position: "absolute",
+    width: ms(220),
+    height: ms(220),
+    borderRadius: ms(110),
+    backgroundColor: "#16A34A",
+    opacity: 0.22,
+    bottom: -vs(100),
+    left: -ms(30),
+  },
+
+  shareLogoBadge: {
+    position: "absolute",
+    right: ms(10),
+    top: ms(10),
+    backgroundColor: "rgba(255,255,255,0.95)",
+    borderRadius: ms(20),
+    padding: ms(6),
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.06)",
+  },
+  shareCardLogo: { width: ms(28), height: ms(28) },
+
+  shareCardLabel: { color: "#D1FAE5", fontWeight: "700", letterSpacing: 0.4 },
+  shareCardNumber: { color: "#ECFDF5", fontSize: s(18), fontWeight: "800", letterSpacing: 1.5 },
+  shareCardName: { color: "#FFFFFF", marginTop: vs(6), fontWeight: "800", fontSize: s(14) },
+
+  shareCardMetaRow: {
+    marginTop: vs(8),
+    flexDirection: "row",
+    alignItems: "center",
+    gap: ms(10),
+  },
+  shareCardTag: {
+    backgroundColor: "rgba(255,255,255,0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.4)",
+    paddingVertical: vs(3),
+    paddingHorizontal: ms(8),
+    borderRadius: ms(999),
+  },
+  shareCardTagText: {
+    color: "#FFFFFF",
+    fontWeight: "900",
+    letterSpacing: 1,
+    fontSize: s(11),
+    textTransform: "uppercase",
+  },
+  shareIssuedText: {
+    color: "#ECFDF5",
+    opacity: 0.9,
+    fontWeight: "700",
+    fontSize: s(11),
+  },
+});

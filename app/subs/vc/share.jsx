@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
   Share,
+  ScrollView,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import QRCode from "react-native-qrcode-svg";
@@ -24,13 +25,14 @@ import {
 } from "../../../features/session/verificationSessionSlice";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { presentableIdFromVc } from "../../../features/session/verificationSessionService";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // If set, we force links to your frontend, e.g. http://localhost:5173/verification-portal
 // Supports optional placeholder: http://localhost:5173/verification-portal?session={session}
 const WEB_BASE = (process.env.EXPO_PUBLIC_WEB_BASE || "").replace(/\/+$/, "");
 const ORIGIN = (process.env.EXPO_PUBLIC_API_URL || "").replace(/\/+$/, "");
 
-// --- NEW: tiny helper to remove a query param from any URL string
+// --- helper to remove a query param from any URL string
 function stripParam(u, name) {
   try {
     const url = new URL(u);
@@ -41,16 +43,23 @@ function stripParam(u, name) {
   }
 }
 
+// Uppercase VC type/title/abbr for "VC : <VALUE>"
+function vcTypeUpper(meta) {
+  const raw = (meta?.abbr || meta?.type || meta?.title || "Credential").toString().trim();
+  return raw.toUpperCase();
+}
+
 export default function ShareVC() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
   const dispatch = useDispatch();
+  const insets = useSafeAreaInsets();
 
   // Local wallet info for header summary
   const vcs = useWallet((s) => s.vcs);
   const vc = useMemo(() => vcs.find((v) => String(v.id) === String(id)), [vcs, id]);
-  const title = vc?.meta?.title || "Credential";
   const name = vc?.meta?.fullName || "—";
+  const vcUpper = vcTypeUpper(vc?.meta);
   const code = String(id || "").slice(-6);
 
   // Compute a server-resolvable credential id for backend lookup (not for URL)
@@ -92,13 +101,13 @@ export default function ShareVC() {
       dispatch(
         createSession({
           ttlHours: 168,
-          credential_id: cidForLink || undefined, // unchanged: still sent to backend, but NOT exposed in URL
+          credential_id: cidForLink || undefined, // still sent to backend, not exposed in URL
         })
       );
     }
   }, [dispatch, id, cidForLink]);
 
-  // Persist a hint so SessionWatcher/Modal can recover after app reloads (unchanged)
+  // Persist a hint so SessionWatcher/Modal can recover after app reloads
   useEffect(() => {
     (async () => {
       try {
@@ -146,22 +155,32 @@ export default function ShareVC() {
         <View style={{ width: 36 }} />
       </View>
 
-      {/* VC summary card */}
-      <View style={styles.card}>
-        <Text style={styles.label}>VC</Text>
-        <Text style={styles.value}>{title}</Text>
-        <Text style={styles.label}>Holder</Text>
-        <Text style={styles.value}>{name}</Text>
-      </View>
-
-      {/* Body */}
       {creating ? (
         <View style={styles.center}>
           <ActivityIndicator size="small" />
           <Text style={styles.muted}>Creating session…</Text>
         </View>
       ) : (
-        <View style={styles.content}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: (insets.bottom ?? 0) + 32 },
+          ]}
+          showsVerticalScrollIndicator
+        >
+          {/* VC summary card: inline rows with uppercase VC */}
+          <View style={styles.card}>
+            <View style={styles.kvRow}>
+              <Text style={styles.kvLabel}>VC :</Text>
+              <Text style={styles.kvValue}>{vcUpper}</Text>
+            </View>
+            <View style={styles.kvRow}>
+              <Text style={styles.kvLabel}>Holder :</Text>
+              <Text style={styles.kvValue}>{name}</Text>
+            </View>
+          </View>
+
+          {/* Any error */}
           {!!createErr && (
             <View style={styles.alertWarn}>
               <Text style={styles.alertText}>Note: {createErr}</Text>
@@ -169,6 +188,7 @@ export default function ShareVC() {
           )}
 
           <Text style={styles.sectionTitle}>Show this to the verifier</Text>
+
           <View style={styles.qrWrap}>
             {verifyUrl ? (
               <QRCode value={verifyUrl} size={240} ecl="M" quietZone={10} />
@@ -178,8 +198,8 @@ export default function ShareVC() {
           </View>
 
           <Text style={styles.help}>
-            The link expires in 7 days. The verifier will enter their org name and purpose, then your phone will be
-            prompted to confirm sending this credential.
+            The link expires in 7 days. The verifier will enter their org name and purpose, then your
+            phone will be prompted to confirm sending this credential.
           </Text>
 
           {/* Selectable link (long press to copy) */}
@@ -193,11 +213,19 @@ export default function ShareVC() {
           ) : null}
 
           <View style={styles.btnRow}>
-            <TouchableOpacity onPress={shareLink} style={[styles.btn, styles.btnOutline]} disabled={!verifyUrl}>
+            <TouchableOpacity
+              onPress={shareLink}
+              style={[styles.btn, styles.btnOutline]}
+              disabled={!verifyUrl}
+            >
               <Ionicons name="copy-outline" size={16} color="#0f172a" />
               <Text style={styles.btnText}>Copy / Share</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={shareLink} style={[styles.btn, styles.btnDark]} disabled={!verifyUrl}>
+            <TouchableOpacity
+              onPress={shareLink}
+              style={[styles.btn, styles.btnDark]}
+              disabled={!verifyUrl}
+            >
               <Ionicons name="share-social-outline" size={16} color="#fff" />
               <Text style={[styles.btnText, styles.btnTextDark]}>Share</Text>
             </TouchableOpacity>
@@ -210,7 +238,7 @@ export default function ShareVC() {
           <View style={styles.codeTag}>
             <Text style={styles.codeText}>VC Code: {code}</Text>
           </View>
-        </View>
+        </ScrollView>
       )}
     </SafeAreaView>
   );
@@ -218,6 +246,7 @@ export default function ShareVC() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#fff" },
+
   header: {
     height: 56,
     flexDirection: "row",
@@ -226,6 +255,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "#e5e7eb",
+    marginTop:20,
   },
   backBtn: {
     width: 36,
@@ -237,15 +267,35 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 18, fontWeight: "700", color: "#0f172a" },
 
-  card: { margin: 16, padding: 16, borderRadius: 12, backgroundColor: "#f8fafc", gap: 6 },
-  label: { color: "#64748b", fontSize: 12 },
-  value: { color: "#0f172a", fontSize: 16, fontWeight: "600", marginBottom: 8 },
+  scrollContent: { alignItems: "center", paddingHorizontal: 20, paddingTop: 12 },
+
+  // Inline key/value rows
+  card: {
+    width: "92%",
+    marginTop: 12,
+    marginBottom: 8,
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: "#f8fafc",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    gap: 10,
+  },
+  kvRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap" },
+  kvLabel: { color: "#64748b", fontSize: 13, fontWeight: "800", marginRight: 6 },
+  kvValue: { color: "#0f172a", fontSize: 16, fontWeight: "800" },
 
   center: { alignItems: "center", gap: 8, marginTop: 24 },
   muted: { color: "#6b7280" },
 
-  content: { alignItems: "center", paddingHorizontal: 20 },
-  sectionTitle: { fontWeight: "700", color: "#0f172a", alignSelf: "flex-start", marginLeft: 16, marginBottom: 8 },
+  sectionTitle: {
+    fontWeight: "700",
+    color: "#0f172a",
+    alignSelf: "flex-start",
+    marginLeft: 20,
+    marginTop: 8,
+    marginBottom: 8,
+  },
   qrWrap: { marginVertical: 8, alignItems: "center" },
   help: { color: "#475569", fontSize: 12, textAlign: "center", paddingHorizontal: 24, marginTop: 8 },
 
@@ -270,9 +320,9 @@ const styles = StyleSheet.create({
   btnTextDark: { color: "#fff", fontWeight: "700" },
   btnGhost: { backgroundColor: "#f8fafc", borderWidth: 1, borderColor: "#e5e7eb" },
 
-  codeTag: { marginTop: 10, backgroundColor: "#ecfeff", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
+  codeTag: { marginTop: 12, backgroundColor: "#ecfeff", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
   codeText: { color: "#0e7490", fontWeight: "700" },
 
-  alertWarn: { backgroundColor: "#fff7ed", borderColor: "#fdba74", borderWidth: 1, padding: 8, borderRadius: 8, marginBottom: 8 },
+  alertWarn: { backgroundColor: "#fff7ed", borderColor: "#fdba74", borderWidth: 1, padding: 8, borderRadius: 8, marginBottom: 8, width: "92%" },
   alertText: { color: "#9a3412", fontSize: 12 },
 });
