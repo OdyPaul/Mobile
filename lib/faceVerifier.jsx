@@ -2,7 +2,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Image,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -17,22 +16,26 @@ import { Camera as FaceCamera } from "react-native-vision-camera-face-detector";
 
 /**
  * FaceVerifier
- * - Guided liveness: blink + 3 head movements (LEFT/RIGHT/UP/DOWN)
- * - Renders its own UI and calls onClose() when user taps "‹ Back"
- * - Calls onCapture(uri) after a successful shot
+ * - Blink + guided head movements (TURN_LEFT / TURN_RIGHT / LOOK_UP / LOOK_DOWN)
+ * - No photo capture; used as a liveness gate only
+ * - Pass condition: 3 successful movements out of max 5 attempts
+ * - Calls onPassed() when liveness passes
+ * - Calls onClose() when user taps "‹ Back"
  */
 
 /* =================== CONFIG =================== */
 
-// Blink/liveness
-const REQUIRED_MOVES = 3;
+const REQUIRED_SUCCESSES = 3; // need 3
+const MAX_ATTEMPTS = 5;       // out of 5 tries
+
+// Blink
 const OPEN_T = 0.6;
 const CLOSED_T = 0.3;
 const CONSEC = 3;
 const CLOSE_MAX_MS = 900;
 const TOTAL_TIMEOUT_MS = 7000;
 
-// Pose / head movement
+// Head pose actions
 const ACTIONS = ["TURN_LEFT", "TURN_RIGHT", "LOOK_UP", "LOOK_DOWN"];
 const ACTION_LABEL = {
   TURN_LEFT: "Turn head LEFT",
@@ -40,8 +43,8 @@ const ACTION_LABEL = {
   LOOK_UP: "Look UP",
   LOOK_DOWN: "Look DOWN",
 };
-const ACTION_CONSEC = 3;
-const ACTION_TIMEOUT_MS = 5000; // per movement
+const ACTION_CONSEC = 3;       // consecutive frames to count as success
+const ACTION_TIMEOUT_MS = 5000; // per movement (try)
 const YAW_DEG = 15;
 const PITCH_DEG = 12;
 
@@ -67,23 +70,22 @@ const getAngles = (f) => {
   return { yaw: yaw ?? 0, pitch: pitch ?? 0, roll: roll ?? 0 };
 };
 
-export default function FaceVerifier({ onClose, onCapture }) {
+export default function FaceVerifier({ onClose, onPassed }) {
   const device = useCameraDevice("front");
   const { hasPermission, requestPermission } = useCameraPermission();
   const cameraRef = useRef(null);
 
-  const [cameraOn, setCameraOn] = useState(false);
   const [faces, setFaces] = useState([]);
-  const [photo, setPhoto] = useState("");
 
-  // Liveness state
+  // Blink + movements
   const [blinkPassed, setBlinkPassed] = useState(false);
-  const [successCount, setSuccessCount] = useState(0); // how many moves done
-  const [canCapture, setCanCapture] = useState(false);
+  const [successCount, setSuccessCount] = useState(0);
+  const [attemptCount, setAttemptCount] = useState(0);
 
-  // Debug
+  // Debug / UI
   const [debugOpen, setDebugOpen] = useState(null);
   const [debugPose, setDebugPose] = useState(null);
+  const [actionTarget, setActionTarget] = useState(null);
 
   // Blink FSM
   const fsmRef = useRef({
@@ -94,44 +96,38 @@ export default function FaceVerifier({ onClose, onCapture }) {
     lastSeen: 0,
   });
 
-  // Head-movement action state
+  // Movement action state
   const actionRef = useRef({
     active: false,
     target: null,
     baseline: { yaw: 0, pitch: 0 },
     consec: 0,
     startedAt: 0,
-    deadline: 0,
     lastTarget: null,
   });
-  const [actionTarget, setActionTarget] = useState(null);
-  const [timeLeft, setTimeLeft] = useState(0);
+
+  // Counts stored in ref for logic, mirrored to state for UI
+  const countsRef = useRef({ success: 0, attempts: 0 });
+
+  // Done flag to stop extra processing
+  const doneRef = useRef(false);
 
   const facePresent = useMemo(() => faces.length === 1, [faces]);
 
-  // Update canCapture whenever liveness pieces change
+  /* ===== Permission: auto-request camera on mount ===== */
   useEffect(() => {
-    setCanCapture(blinkPassed && successCount >= REQUIRED_MOVES);
-  }, [blinkPassed, successCount]);
+    if (!hasPermission) {
+      requestPermission().catch(() => {
+        Toast.show({
+          type: "error",
+          text1: "Camera permission is required",
+        });
+      });
+    }
+  }, [hasPermission, requestPermission]);
 
-  // Action countdown tick
-  useEffect(() => {
-    if (!actionRef.current.active) return;
-    const id = setInterval(() => {
-      const now = Date.now();
-      const left = Math.max(
-        0,
-        Math.ceil((actionRef.current.deadline - now) / 1000)
-      );
-      setTimeLeft(left);
-      if (left <= 0) {
-        rerollAction();
-      }
-    }, 250);
-    return () => clearInterval(id);
-  }, [actionTarget]);
-
-  const resetFSM = () => {
+  /* ===== Reset helpers ===== */
+  const resetBlinkFSM = () => {
     fsmRef.current = {
       state: "WAIT_OPEN",
       openCount: 0,
@@ -142,55 +138,31 @@ export default function FaceVerifier({ onClose, onCapture }) {
   };
 
   const fullReset = () => {
-    resetFSM();
+    resetBlinkFSM();
     setBlinkPassed(false);
+    countsRef.current = { success: 0, attempts: 0 };
     setSuccessCount(0);
-    setCanCapture(false);
+    setAttemptCount(0);
     setDebugOpen(null);
     setDebugPose(null);
-
+    setActionTarget(null);
     actionRef.current = {
       active: false,
       target: null,
       baseline: { yaw: 0, pitch: 0 },
       consec: 0,
       startedAt: 0,
-      deadline: 0,
       lastTarget: null,
     };
-    setActionTarget(null);
-    setTimeLeft(0);
+    doneRef.current = false;
   };
 
-  const askPermissionAndStart = async () => {
-    if (!hasPermission) {
-      const ok = await requestPermission();
-      if (!ok) {
-        Toast.show({ type: "error", text1: "Camera permission is required" });
-        return;
-      }
-    }
-    if (!device) {
-      Toast.show({ type: "error", text1: "No camera device found" });
-      return;
-    }
-    setPhoto("");
-    setCameraOn(true);
-    fullReset();
-  };
-
-  const backToHome = () => {
-    setCameraOn(false);
-    setPhoto("");
+  const handleBack = () => {
     fullReset();
     onClose?.();
   };
 
-  const retake = () => {
-    setPhoto("");
-    setCameraOn(true);
-    fullReset();
-  };
+  /* ===== Blink + action helpers ===== */
 
   const eyeOpenness = (f) => {
     const vals = [
@@ -207,45 +179,27 @@ export default function FaceVerifier({ onClose, onCapture }) {
     return pool[Math.floor(Math.random() * pool.length)];
   };
 
-  const startAction = (face) => {
-    if (successCount >= REQUIRED_MOVES) return; // already done
+  const startAction = (face, now) => {
+    if (!face) return;
     const { yaw, pitch } = getAngles(face);
     const target = pickTarget(actionRef.current.lastTarget);
-    const now = Date.now();
     actionRef.current = {
       active: true,
       target,
       baseline: { yaw, pitch },
       consec: 0,
       startedAt: now,
-      deadline: now + ACTION_TIMEOUT_MS,
       lastTarget: target,
     };
     setActionTarget(target);
-    setTimeLeft(Math.ceil(ACTION_TIMEOUT_MS / 1000));
+
+    const attempts = countsRef.current.attempts;
+    const successes = countsRef.current.success;
     Toast.show({
       type: "info",
-      text1: `Move ${successCount + 1}/${REQUIRED_MOVES}: ${
-        ACTION_LABEL[target]
-      }`,
+      text1: `Move attempt ${attempts + 1}/${MAX_ATTEMPTS}`,
+      text2: `${ACTION_LABEL[target]} • successes ${successes}/${REQUIRED_SUCCESSES}`,
     });
-  };
-
-  const rerollAction = () => {
-    if (successCount >= REQUIRED_MOVES) {
-      actionRef.current.active = false;
-      setActionTarget(null);
-      setTimeLeft(0);
-      return;
-    }
-    const current = faces?.[0];
-    if (!current) {
-      actionRef.current.active = false;
-      setActionTarget(null);
-      setTimeLeft(0);
-      return;
-    }
-    startAction(current);
   };
 
   const actionSatisfied = (target, baseline, current) => {
@@ -265,17 +219,59 @@ export default function FaceVerifier({ onClose, onCapture }) {
     }
   };
 
-  /* -------- main face callback -------- */
+  const finishAttempt = (success, face) => {
+    const counts = countsRef.current;
+    counts.attempts += 1;
+    if (success) counts.success += 1;
+    setAttemptCount(counts.attempts);
+    setSuccessCount(counts.success);
+
+    actionRef.current.active = false;
+    actionRef.current.consec = 0;
+    setActionTarget(null);
+
+    // Check overall result
+    if (counts.success >= REQUIRED_SUCCESSES) {
+      doneRef.current = true;
+      Toast.hide();
+      Toast.show({
+        type: "success",
+        text1: "Liveness check passed",
+      });
+      onPassed?.();
+      return;
+    }
+
+    if (counts.attempts >= MAX_ATTEMPTS) {
+      Toast.hide();
+      Toast.show({
+        type: "error",
+        text1: "Liveness check failed",
+        text2: "We couldn't verify enough movements.",
+      });
+      // Reset session, but stay on camera so they can try again
+      fullReset();
+      return;
+    }
+
+    // Start next action
+    const now = Date.now();
+    startAction(face, now);
+  };
+
+  /* ===== Main face callback ===== */
   const onFaces = (detected) => {
+    if (doneRef.current) return;
+
     const arr = Array.isArray(detected) ? detected : [];
     setFaces(arr);
 
     if (arr.length !== 1) {
-      // Lost single face → relax everything, but keep previous success so far
+      // Lost single face → reset blink but keep movement counts
       const now = Date.now();
       const f = fsmRef.current;
       if (f.lastSeen && now - f.lastSeen > 1000) {
-        resetFSM();
+        resetBlinkFSM();
         setBlinkPassed(false);
       }
       setDebugOpen(null);
@@ -315,7 +311,7 @@ export default function FaceVerifier({ onClose, onCapture }) {
 
       if (!fsm.t0) fsm.t0 = now;
       if (now - fsm.t0 > TOTAL_TIMEOUT_MS) {
-        resetFSM();
+        resetBlinkFSM();
         return;
       }
 
@@ -327,124 +323,59 @@ export default function FaceVerifier({ onClose, onCapture }) {
         fsm.t0 = now;
       } else if (fsm.state === "WAIT_REOPEN") {
         if (now - fsm.t0 > CLOSE_MAX_MS) {
-          resetFSM();
+          resetBlinkFSM();
           return;
         }
         if (fsm.openCount >= CONSEC) {
           setBlinkPassed(true);
           Toast.hide();
           Toast.show({ type: "success", text1: "Blink detected" });
-          startAction(face); // start first movement
+          // Start first movement
+          startAction(face, now);
         }
       }
       return;
     }
 
-    // --- ACTION (HEAD MOVEMENT) PHASE ---
-    if (successCount < REQUIRED_MOVES) {
-      if (!actionRef.current.active) {
-        startAction(face);
-        return;
-      }
+    // --- ACTION PHASE (3 successes out of 5 tries) ---
+    const act = actionRef.current;
 
-      if (Date.now() > actionRef.current.deadline) {
-        rerollAction();
-        return;
-      }
-
-      if (
-        actionSatisfied(
-          actionRef.current.target,
-          actionRef.current.baseline,
-          angles
-        )
-      ) {
-        actionRef.current.consec += 1;
-        if (actionRef.current.consec >= ACTION_CONSEC) {
-          const next = successCount + 1;
-          setSuccessCount(next);
-          actionRef.current.active = false;
-          setActionTarget(null);
-          setTimeLeft(0);
-
-          if (next >= REQUIRED_MOVES) {
-            Toast.hide();
-            Toast.show({
-              type: "success",
-              text1: "Liveness passed — you can now take a photo",
-            });
-          } else {
-            setTimeout(() => startAction(face), 400);
-          }
-        }
-      } else {
-        actionRef.current.consec = 0;
-      }
-    }
-  };
-
-  const takeShot = async () => {
-    if (!cameraRef.current) return;
-    if (!canCapture) {
-      Toast.show({
-        type: "info",
-        text1: `Complete blink + ${REQUIRED_MOVES} head moves first`,
-      });
+    // If no action active yet, start one
+    if (!act.active) {
+      // Might have been reset after failing; ensure we don't start new action if we've already passed
+      if (countsRef.current.success >= REQUIRED_SUCCESSES) return;
+      if (countsRef.current.attempts >= MAX_ATTEMPTS) return;
+      startAction(face, now);
       return;
     }
-    try {
-      const shot = await cameraRef.current.takePhoto({});
-      const uri = shot?.path?.startsWith("file://")
-        ? shot.path
-        : `file://${shot.path}`;
-      setPhoto(uri);
-      setCameraOn(false);
-      onCapture?.(uri);
-    } catch (e) {
-      Toast.show({
-        type: "error",
-        text1: "Capture failed",
-        text2: String(e?.message || e),
-      });
+
+    // Check timeout
+    if (now - act.startedAt > ACTION_TIMEOUT_MS) {
+      finishAttempt(false, face);
+      return;
+    }
+
+    // Check if movement satisfied
+    if (
+      actionSatisfied(act.target, act.baseline, angles)
+    ) {
+      act.consec += 1;
+      if (act.consec >= ACTION_CONSEC) {
+        finishAttempt(true, face);
+      }
+    } else {
+      act.consec = 0;
     }
   };
 
-  /* =================== UI =================== */
+  /* ===== UI ===== */
 
-  // After capture: preview with Retake / Use Photo
-  if (photo) {
-    return (
-      <View style={styles.container}>
-        <Image source={{ uri: photo }} style={styles.preview} />
-        <View style={styles.bottomRowFixed}>
-          <TouchableOpacity style={styles.secondaryBtn} onPress={retake}>
-            <Text style={styles.secondaryText}>Retake</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.primaryBtn} onPress={backToHome}>
-            <Text style={styles.primaryText}>Use Photo</Text>
-          </TouchableOpacity>
-        </View>
-        <Toast />
-      </View>
-    );
-  }
-
-  // Pre-camera screen
-  if (!cameraOn) {
+  if (!device) {
     return (
       <View style={styles.center}>
         <Text style={styles.title}>Face Verification</Text>
-        <Text style={styles.subtitle}>
-          We’ll ask you to blink and move your head to confirm liveness.
-        </Text>
-        <TouchableOpacity
-          onPress={askPermissionAndStart}
-          style={styles.primaryBtn}
-        >
-          <Text style={styles.primaryText}>Activate Camera</Text>
-        </TouchableOpacity>
-        {!device && <Text style={styles.warn}>No camera device found</Text>}
-        <TouchableOpacity onPress={onClose} style={styles.skipBtn}>
+        <Text style={styles.subtitle}>No front camera device found.</Text>
+        <TouchableOpacity onPress={handleBack} style={styles.skipBtn}>
           <Text style={styles.skipText}>‹ Back</Text>
         </TouchableOpacity>
         <Toast />
@@ -452,15 +383,12 @@ export default function FaceVerifier({ onClose, onCapture }) {
     );
   }
 
-  // Waiting for permission / device
-  if (!device || !hasPermission) {
+  if (!hasPermission) {
     return (
       <View style={styles.center}>
         <ActivityIndicator />
-        <Text style={styles.subtitle}>
-          {device ? "Waiting for permission…" : "No camera device found"}
-        </Text>
-        <TouchableOpacity onPress={onClose} style={styles.skipBtn}>
+        <Text style={styles.subtitle}>Waiting for camera permission…</Text>
+        <TouchableOpacity onPress={handleBack} style={styles.skipBtn}>
           <Text style={styles.skipText}>‹ Back</Text>
         </TouchableOpacity>
         <Toast />
@@ -485,15 +413,15 @@ export default function FaceVerifier({ onClose, onCapture }) {
           ref={cameraRef}
           style={styles.camera}
           device={device}
-          isActive={true}
-          photo={true}
+          isActive={!doneRef.current}
+          photo={false}
           faceDetectionCallback={onFaces}
           faceDetectionOptions={faceDetectionOptions}
         />
 
         {/* Back button (lower-left) */}
         <View style={styles.backWrap}>
-          <TouchableOpacity onPress={backToHome} style={styles.backBtn}>
+          <TouchableOpacity onPress={handleBack} style={styles.backBtn}>
             <Text style={styles.backText}>‹ Back</Text>
           </TouchableOpacity>
         </View>
@@ -509,17 +437,15 @@ export default function FaceVerifier({ onClose, onCapture }) {
           {facePresent && !blinkPassed && (
             <Text style={styles.overlayText}>Blink to verify liveness</Text>
           )}
-          {facePresent && blinkPassed && successCount < REQUIRED_MOVES && (
+          {facePresent && blinkPassed && !doneRef.current && (
             <Text style={styles.overlayText}>
-              Move {successCount + 1}/{REQUIRED_MOVES}:{" "}
-              {actionTarget ? ACTION_LABEL[actionTarget] : "Get ready…"}
-              {timeLeft ? ` • ${timeLeft}s` : ""}
+              {actionTarget
+                ? `${ACTION_LABEL[actionTarget]} • attempts ${attemptCount}/${MAX_ATTEMPTS} • successes ${successCount}/${REQUIRED_SUCCESSES}`
+                : "Get ready for movement…"}
             </Text>
           )}
-          {facePresent && canCapture && (
-            <Text style={styles.overlayText}>
-              Liveness passed — tap the shutter
-            </Text>
+          {doneRef.current && (
+            <Text style={styles.overlayText}>Liveness check complete</Text>
           )}
 
           {debugOpen !== null && (
@@ -534,20 +460,6 @@ export default function FaceVerifier({ onClose, onCapture }) {
         <View style={styles.overlayCounter}>
           <Text style={styles.counterText}>Faces: {faces.length}</Text>
         </View>
-      </View>
-
-      {/* Shutter: enabled only after liveness passed */}
-      <View style={styles.bottomRow}>
-        <TouchableOpacity
-          onPress={takeShot}
-          style={[styles.shutterButton, !canCapture && styles.shutterDisabled]}
-          disabled={!canCapture}
-        />
-        {!canCapture && (
-          <Text style={styles.hint}>
-            Blink + complete {REQUIRED_MOVES} head moves to enable shutter
-          </Text>
-        )}
       </View>
 
       <Toast />
@@ -571,24 +483,8 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 20,
   },
-  primaryBtn: {
-    backgroundColor: "#4F8EF7",
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  primaryText: { color: "#fff", fontWeight: "700" },
-  secondaryBtn: {
-    borderColor: "#fff",
-    borderWidth: 1.5,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
-  secondaryText: { color: "#fff", fontWeight: "600" },
   skipBtn: { marginTop: 12, paddingHorizontal: 12, paddingVertical: 8 },
   skipText: { color: "#bbb", fontWeight: "600" },
-  warn: { marginTop: 8, color: "#f77" },
 
   camera: { flex: 1 },
 
@@ -616,24 +512,6 @@ const styles = StyleSheet.create({
   },
   counterText: { color: "#fff", fontWeight: "600", fontSize: 12 },
 
-  bottomRow: {
-    position: "absolute",
-    bottom: 28,
-    width: "100%",
-    alignItems: "center",
-    gap: 8,
-  },
-
-  bottomRowFixed: {
-    position: "absolute",
-    bottom: 28,
-    width: "100%",
-    flexDirection: "row",
-    justifyContent: "space-evenly",
-    alignItems: "center",
-    paddingHorizontal: 20,
-  },
-
   backWrap: { position: "absolute", bottom: 28, left: 20 },
   backBtn: {
     paddingHorizontal: 12,
@@ -642,15 +520,4 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.45)",
   },
   backText: { color: "#fff", fontWeight: "700" },
-
-  shutterButton: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: "#fff",
-  },
-  shutterDisabled: { backgroundColor: "#777" },
-  hint: { color: "#ccc", marginTop: 6, fontSize: 12 },
-
-  preview: { flex: 1, borderRadius: 10, margin: 12 },
 });
