@@ -1,11 +1,22 @@
+// app/.../RequestVC.jsx
 import React, { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, Pressable, StyleSheet, Alert } from "react-native";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  Pressable,
+  StyleSheet,
+  Alert,
+} from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import { useDispatch, useSelector } from "react-redux";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import { s, vs } from "react-native-size-matters";
 import { Ionicons } from "@expo/vector-icons";
 import { createVcRequest } from "../../../features/vc/vcRequestSlice";
+// 👇 adjust path if needed
+import FaceVerifier from "../../../lib/faceVerifier";
 
 const PRIMARY = "#16A34A";
 const BG = "#f2f4f9";
@@ -16,8 +27,14 @@ const PLACEHOLDER = "#9AA0A6";
 const PURPOSE_OPTIONS = [
   { value: "employment", label: "Employment" },
   { value: "further studies", label: "Further Studies" },
-  { value: "board examination / professional licensure", label: "Board Examination / Professional Licensure" },
-  { value: "scholarship / grant application", label: "Scholarship / Grant Application" },
+  {
+    value: "board examination / professional licensure",
+    label: "Board Examination / Professional Licensure",
+  },
+  {
+    value: "scholarship / grant application",
+    label: "Scholarship / Grant Application",
+  },
   { value: "personal / general reference", label: "Personal / General Reference" },
   { value: "overseas employment", label: "Overseas Employment" },
   { value: "training / seminar", label: "Training / Seminar" },
@@ -33,13 +50,36 @@ export default function RequestVC() {
   const [purpose, setPurpose] = useState(""); // store the VALUE
   const [showPurposeMenu, setShowPurposeMenu] = useState(false);
 
+  // liveness flow
+  const [showLiveness, setShowLiveness] = useState(false);
+
   const selectedPurposeLabel =
-    PURPOSE_OPTIONS.find((p) => p.value === purpose)?.label || purpose; // show pretty label
+    PURPOSE_OPTIONS.find((p) => p.value === purpose)?.label || purpose;
 
-  const onSubmit = async () => {
-    if (!isVerified) return Alert.alert("Not Verified", "Your account is not verified yet.");
-    if (!purpose.trim()) return Alert.alert("Missing Info", "Purpose is required.");
+  const validate = () => {
+    if (!isVerified) {
+      Alert.alert(
+        "Not Verified",
+        "Your account must be verified before requesting credentials."
+      );
+      return false;
+    }
+    if (!purpose.trim()) {
+      Alert.alert("Missing Info", "Purpose is required.");
+      return false;
+    }
+    return true;
+  };
 
+  // Step 1: user taps submit → open liveness checker
+  const handlePressSubmit = () => {
+    if (!validate()) return;
+    setShowLiveness(true);
+  };
+
+  // Step 2: liveness OK → actually send VC request
+  const handleLivenessPassed = async () => {
+    setShowLiveness(false);
     try {
       await dispatch(createVcRequest({ type, purpose })).unwrap();
       Alert.alert("Success", "Your credential request was submitted.");
@@ -50,6 +90,21 @@ export default function RequestVC() {
     }
   };
 
+  // Liveness cancelled / failed
+  const handleLivenessClose = () => {
+    setShowLiveness(false);
+  };
+
+  // When running liveness, show only the FaceVerifier full-screen
+  if (showLiveness) {
+    return (
+      <FaceVerifier
+        onClose={handleLivenessClose}
+        onPassed={handleLivenessPassed}
+      />
+    );
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: BG }}>
       <KeyboardAwareScrollView
@@ -59,16 +114,52 @@ export default function RequestVC() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+        {/* Header */}
         <Text style={styles.title}>Request Credential</Text>
 
+        {/* Account status card */}
+        <View style={styles.statusCard}>
+          <Ionicons
+            name={isVerified ? "checkmark-circle" : "alert-circle"}
+            size={22}
+            color={isVerified ? "#16A34A" : "#DC2626"}
+            style={{ marginRight: 10 }}
+          />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.statusLabel}>Account status</Text>
+            <Text
+              style={[
+                styles.statusValue,
+                { color: isVerified ? "#16A34A" : "#DC2626" },
+              ]}
+            >
+              {isVerified ? "Verified" : "Not verified"}
+            </Text>
+            <Text style={styles.statusHint}>
+              A quick liveness check will run before your request is sent.
+            </Text>
+          </View>
+        </View>
+
+        {/* Type picker */}
         <Text style={styles.label}>Type of VC</Text>
         <View style={styles.pickerWrap}>
-          <Picker selectedValue={type} onValueChange={(v) => setType(v)}>
-            <Picker.Item label="Transcript of Records (TOR)" value="TOR" />
-            <Picker.Item label="Diploma" value="DIPLOMA" />
+          <Picker
+            selectedValue={type}
+            onValueChange={(v) => setType(v)}
+            style={styles.picker}
+            dropdownIconColor="#111827"
+          >
+            <Picker.Item
+              label="Transcript of Records (TOR)"
+              value="TOR"
+              color="#111827"
+            />
+            <Picker.Item label="Diploma" value="DIPLOMA" color="#111827" />
           </Picker>
         </View>
 
+        {/* Purpose input + dropdown */}
         <Text style={[styles.label, { marginTop: vs(12) }]}>Purpose</Text>
         <View style={styles.purposeRow}>
           <TextInput
@@ -76,21 +167,30 @@ export default function RequestVC() {
             placeholder="Type a purpose or pick from options"
             placeholderTextColor={PLACEHOLDER}
             value={selectedPurposeLabel}
-            onChangeText={(txt) => setPurpose(txt.trim().toLowerCase())} // free-typed will still be validated server-side
+            onChangeText={(txt) => setPurpose(txt.trim().toLowerCase())}
           />
-          <Pressable onPress={() => setShowPurposeMenu((v) => !v)} style={styles.iconBtn} hitSlop={10}>
-            <Ionicons name="settings-outline" size={20} color="#111827" />
+          <Pressable
+            onPress={() => setShowPurposeMenu((v) => !v)}
+            style={styles.iconBtn}
+            hitSlop={10}
+          >
+            <Ionicons name="options-outline" size={18} color="#111827" />
           </Pressable>
         </View>
 
         {showPurposeMenu && (
           <View style={styles.dropdownCard}>
-            {PURPOSE_OPTIONS.map((opt) => (
+            {PURPOSE_OPTIONS.map((opt, idx) => (
               <Pressable
                 key={opt.value}
-                style={styles.dropdownItem}
+                style={[
+                  styles.dropdownItem,
+                  idx === PURPOSE_OPTIONS.length - 1 && {
+                    borderBottomWidth: 0,
+                  },
+                ]}
                 onPress={() => {
-                  setPurpose(opt.value); // ✅ store VALUE
+                  setPurpose(opt.value);
                   setShowPurposeMenu(false);
                 }}
               >
@@ -101,9 +201,25 @@ export default function RequestVC() {
           </View>
         )}
 
-        <TouchableOpacity style={[styles.button, isCreating ? { opacity: 0.6 } : null]} onPress={onSubmit} disabled={isCreating}>
-          <Text style={styles.btnText}>{isCreating ? "Submitting…" : "Submit Request"}</Text>
+        {/* Submit */}
+        <TouchableOpacity
+          style={[
+            styles.button,
+            (isCreating || !isVerified) && { opacity: 0.6 },
+          ]}
+          onPress={handlePressSubmit}
+          disabled={isCreating || !isVerified}
+        >
+          <Text style={styles.btnText}>
+            {isCreating ? "Submitting…" : "Submit Request"}
+          </Text>
         </TouchableOpacity>
+
+        {!isVerified && (
+          <Text style={styles.lockHint}>
+            You need a verified account before you can request credentials.
+          </Text>
+        )}
       </KeyboardAwareScrollView>
     </View>
   );
@@ -111,15 +227,105 @@ export default function RequestVC() {
 
 const styles = StyleSheet.create({
   container: { flexGrow: 1, padding: s(20) },
-  title: { fontSize: s(22), fontWeight: "700", marginBottom: vs(10) },
-  label: { fontSize: s(12), fontWeight: "600", color: LABEL, marginBottom: vs(6) },
-  lineInput: { paddingVertical: vs(10), fontSize: s(14), backgroundColor: "transparent", borderBottomWidth: 1, borderBottomColor: LINE },
-  pickerWrap: { borderWidth: 1, borderColor: LINE, borderRadius: s(10), backgroundColor: "#fff", marginBottom: vs(8) },
-  purposeRow: { flexDirection: "row", alignItems: "center", gap: s(8) },
-  iconBtn: { padding: s(8), borderRadius: 999, backgroundColor: "#F3F4F6", borderWidth: 1, borderColor: "#E5E7EB" },
-  dropdownCard: { marginTop: vs(8), borderWidth: 1, borderColor: LINE, borderRadius: s(10), backgroundColor: "#fff", overflow: "hidden" },
-  dropdownItem: { flexDirection: "row", alignItems: "center", gap: s(8), paddingVertical: vs(10), paddingHorizontal: s(12), borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
+  title: { fontSize: s(22), fontWeight: "700", marginBottom: vs(14) },
+
+  statusCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    padding: s(12),
+    borderRadius: s(12),
+    backgroundColor: "#E5F3FF",
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    marginBottom: vs(18),
+  },
+  statusLabel: {
+    fontSize: s(11),
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    color: "#475569",
+  },
+  statusValue: { fontSize: s(14), fontWeight: "700", marginTop: 2 },
+  statusHint: {
+    fontSize: s(11),
+    color: "#64748B",
+    marginTop: 4,
+  },
+
+  label: {
+    fontSize: s(12),
+    fontWeight: "600",
+    color: LABEL,
+    marginBottom: vs(6),
+  },
+
+  pickerWrap: {
+    borderWidth: 1,
+    borderColor: LINE,
+    borderRadius: s(10),
+    backgroundColor: "#fff",
+    marginBottom: vs(8),
+    overflow: "hidden",
+  },
+  picker: {
+    height: vs(44),
+    width: "100%",
+    color: "#111827",
+  },
+
+  lineInput: {
+    paddingVertical: vs(10),
+    fontSize: s(14),
+    backgroundColor: "transparent",
+    borderBottomWidth: 1,
+    borderBottomColor: LINE,
+    color: "#111827",
+  },
+  purposeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: s(8),
+  },
+  iconBtn: {
+    padding: s(8),
+    borderRadius: 999,
+    backgroundColor: "#F3F4F6",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+
+  dropdownCard: {
+    marginTop: vs(8),
+    borderWidth: 1,
+    borderColor: LINE,
+    borderRadius: s(10),
+    backgroundColor: "#fff",
+    overflow: "hidden",
+  },
+  dropdownItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: s(8),
+    paddingVertical: vs(10),
+    paddingHorizontal: s(12),
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+  },
   dropdownText: { fontSize: s(14), color: "#111827", flexShrink: 1 },
-  button: { backgroundColor: PRIMARY, paddingVertical: vs(14), borderRadius: s(12), alignItems: "center", width: "100%", marginTop: vs(18) },
+
+  button: {
+    backgroundColor: PRIMARY,
+    paddingVertical: vs(14),
+    borderRadius: s(12),
+    alignItems: "center",
+    width: "100%",
+    marginTop: vs(24),
+  },
   btnText: { color: "#fff", fontSize: s(16), fontWeight: "700" },
+
+  lockHint: {
+    marginTop: vs(8),
+    fontSize: s(11),
+    color: "#9CA3AF",
+  },
 });
