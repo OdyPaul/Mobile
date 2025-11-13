@@ -5,13 +5,13 @@ export const login_styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#E8F5E9",
     alignItems: "center",
-    justifyContent: "flex-start", // move everything upward
+    justifyContent: "flex-start", 
     paddingHorizontal: s(20),
-    paddingTop: vs(80), // adds top space for clean offset
+    paddingTop: vs(80), 
   },
   logoContainer: {
     alignItems: "center",
-    marginBottom: vs(10), // slightly closer to the form
+    marginBottom: vs(10), 
   },
   formCard: {
     width: "100%",

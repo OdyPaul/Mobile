@@ -129,7 +129,7 @@ export default function Settings() {
             <Ionicons name="mail-outline" size={moderateScale(22)} color="#1E5128" style={{ marginRight: scale(8) }} />
             <Text style={s.contactText}>Email us at:</Text>
           </View>
-          <Text style={s.contactEmail}>email@pocketcred.pro</Text>
+          <Text style={s.contactEmail}>email@CredPocket.pro</Text>
         </View>
       </ScrollView>
 

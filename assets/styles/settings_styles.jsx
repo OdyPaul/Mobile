@@ -4,7 +4,7 @@ import { moderateScale, scale, verticalScale } from "react-native-size-matters";
 export const settings_styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#E8F5E9",
+    backgroundColor: "#F9FAFB", //F9FAFB
   },
   container: {
     paddingHorizontal: scale(20),
@@ -12,7 +12,7 @@ export const settings_styles = StyleSheet.create({
     paddingBottom: verticalScale(40),
   },
   profileCard: {
-    backgroundColor: "#fff",
+    backgroundColor: "#F3F4F6",
     borderRadius: moderateScale(20),
     flexDirection: "row",
     alignItems: "center",
@@ -60,12 +60,12 @@ export const settings_styles = StyleSheet.create({
     fontSize: moderateScale(15),
   },
   menuSection: {
-    backgroundColor: "#fff",
+    backgroundColor: "#F3F4F6",
     borderRadius: moderateScale(20),
     paddingVertical: verticalScale(5),
     paddingHorizontal: scale(10),
     shadowColor: "#000",
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.02,
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 4,
     elevation: 2,
@@ -90,12 +90,12 @@ export const settings_styles = StyleSheet.create({
   contactCard: {
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "white",
+    backgroundColor: "#F3F4F6",
     borderRadius: moderateScale(20),
     paddingVertical: verticalScale(15),
     marginTop: verticalScale(10),
     shadowColor: "#000",
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.02,
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 4,
     elevation: 2,

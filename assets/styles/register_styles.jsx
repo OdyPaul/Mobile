@@ -1,3 +1,4 @@
+// assets/styles/register_styles.js
 import { StyleSheet } from "react-native";
 import { s, vs, ms } from "react-native-size-matters";
 
@@ -39,6 +40,17 @@ export const register_styles = StyleSheet.create({
     marginBottom: 25,
     marginTop: 4,
   },
+
+  // ✅ Label for inputs
+  inputLabel: {
+    alignSelf: "flex-start",
+    marginBottom: 4,
+    marginLeft: 4,
+    fontSize: 13,
+    color: "#4b5563",
+    fontWeight: "500",
+  },
+
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -83,5 +95,34 @@ export const register_styles = StyleSheet.create({
   loginLink: {
     color: "#43A047",
     fontWeight: "bold",
+  },
+
+  otpWrapper: {
+    marginTop: vs(18),
+    width: "100%",
+    alignItems: "center",
+  },
+  otpLabel: {
+    color: "#6b7280",
+    fontSize: 13,
+    marginBottom: vs(8),
+    textAlign: "center",
+  },
+  otpContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: "80%",
+  },
+  otpInput: {
+    width: s(42),
+    height: vs(48),
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    textAlign: "center",
+    fontSize: 20,
+    fontWeight: "600",
+    backgroundColor: "#f9fafb",
+    color: "#111827",
   },
 });

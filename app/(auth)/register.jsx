@@ -1,3 +1,4 @@
+// app/register.js (or wherever your Register component is)
 import React, { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -24,7 +25,12 @@ export default function Register() {
     try {
       setSendingOtp(true);
       await authService.requestEmailOtp(email.trim());
-      // -> go to verify screen carrying the pending registration payload
+
+      Alert.alert(
+        "OTP 6-digit code sent!",
+        "Check your inbox and enter it on the next screen."
+      );
+
       router.replace({
         pathname: "/verify_email",
         params: {
@@ -34,7 +40,10 @@ export default function Register() {
         },
       });
     } catch (e) {
-      Alert.alert("Failed to send OTP", e?.response?.data?.message || e?.message || "Try again.");
+      Alert.alert(
+        "Failed to send OTP",
+        e?.response?.data?.message || e?.message || "Try again."
+      );
     } finally {
       setSendingOtp(false);
     }
@@ -44,55 +53,103 @@ export default function Register() {
     <SafeAreaView style={register_styles.container}>
       <View style={register_styles.card}>
         <View style={register_styles.headerRow}>
-          <Text style={register_styles.title}>PocketCred</Text>
+          <Text style={register_styles.title}>CredPocket</Text>
           <AppLogo width={s(60)} height={vs(60)} />
         </View>
         <Text style={register_styles.subtitle}>Credential Wallet</Text>
 
         {/* Name */}
-        <View style={register_styles.inputContainer}>
-          <Ionicons name="person-outline" size={20} color="#6b7280" style={register_styles.icon} />
-          <TextInput placeholder="Full Name" value={fullName} onChangeText={setFullName} style={register_styles.input} />
+        <View style={{ width: "100%" }}>
+          <Text style={register_styles.inputLabel}>Full Name</Text>
+          <View style={register_styles.inputContainer}>
+            <Ionicons
+              name="person-outline"
+              size={20}
+              color="#6b7280"
+              style={register_styles.icon}
+            />
+            <TextInput
+              placeholder="Full Name"
+              value={fullName}
+              onChangeText={setFullName}
+              style={register_styles.input}
+            />
+          </View>
         </View>
 
         {/* Email */}
-        <View style={[register_styles.inputContainer, { alignItems: "center" }]}>
-          <Ionicons name="mail-outline" size={20} color="#6b7280" style={register_styles.icon} />
-          <TextInput
-            placeholder="Email"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            value={email}
-            onChangeText={setEmail}
-            style={[register_styles.input, { flex: 1 }]}
-          />
+        <View style={{ width: "100%", marginTop: 8 }}>
+          <Text style={register_styles.inputLabel}>Email</Text>
+          <View
+            style={[
+              register_styles.inputContainer,
+              { alignItems: "center" },
+            ]}
+          >
+            <Ionicons
+              name="mail-outline"
+              size={20}
+              color="#6b7280"
+              style={register_styles.icon}
+            />
+            <TextInput
+              placeholder="Email"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              value={email}
+              onChangeText={setEmail}
+              style={[register_styles.input, { flex: 1 }]}
+            />
+          </View>
         </View>
 
         {/* Password */}
-        <View style={register_styles.inputContainer}>
-          <Ionicons name="lock-closed-outline" size={20} color="#6b7280" style={register_styles.icon} />
-          <TextInput
-            placeholder="Password"
-            secureTextEntry={!passwordVisible}
-            value={password}
-            onChangeText={setPassword}
-            style={register_styles.input}
-          />
-          <TouchableOpacity onPress={() => setPasswordVisible(!passwordVisible)} style={register_styles.eyeIcon}>
-            <Ionicons name={passwordVisible ? "eye-outline" : "eye-off-outline"} size={22} color="#6b7280" />
-          </TouchableOpacity>
+        <View style={{ width: "100%", marginTop: 8 }}>
+          <Text style={register_styles.inputLabel}>Password</Text>
+          <View style={register_styles.inputContainer}>
+            <Ionicons
+              name="lock-closed-outline"
+              size={20}
+              color="#6b7280"
+              style={register_styles.icon}
+            />
+            <TextInput
+              placeholder="Password"
+              secureTextEntry={!passwordVisible}
+              value={password}
+              onChangeText={setPassword}
+              style={register_styles.input}
+            />
+            <TouchableOpacity
+              onPress={() => setPasswordVisible(!passwordVisible)}
+              style={register_styles.eyeIcon}
+            >
+              <Ionicons
+                name={passwordVisible ? "eye-outline" : "eye-off-outline"}
+                size={22}
+                color="#6b7280"
+              />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <TouchableOpacity
-          style={[register_styles.button, { opacity: sendingOtp ? 0.6 : 1, marginTop: vs(10) }]}
+          style={[
+            register_styles.button,
+            { opacity: sendingOtp ? 0.6 : 1, marginTop: vs(16) },
+          ]}
           onPress={continueToVerify}
           disabled={sendingOtp}
         >
-          <Text style={register_styles.buttonText}>{sendingOtp ? "Sending OTP..." : "Continue"}</Text>
+          <Text style={register_styles.buttonText}>
+            {sendingOtp ? "Sending OTP..." : "Continue"}
+          </Text>
         </TouchableOpacity>
 
         <View style={register_styles.footer}>
-          <Text style={register_styles.footerText}>Already have an account? </Text>
+          <Text style={register_styles.footerText}>
+            Already have an account?{" "}
+          </Text>
           <TouchableOpacity onPress={() => router.push("/login")}>
             <Text style={register_styles.loginLink}>Login</Text>
           </TouchableOpacity>

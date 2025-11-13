@@ -54,8 +54,16 @@ export default function Vc() {
   const [index, setIndex] = useState(0);
   const listRef = useRef(null);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
-  useFocusEffect(useCallback(() => { dispatch(refreshNotifications()); }, [dispatch]));
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
+  useFocusEffect(
+    useCallback(() => {
+      dispatch(refreshNotifications());
+    }, [dispatch])
+  );
 
   useEffect(() => {
     if (vcs.length === 0) setIndex(0);
@@ -66,7 +74,13 @@ export default function Vc() {
     (id) => {
       Alert.alert("Remove credential?", "This will permanently delete it from this device.", [
         { text: "Cancel", style: "cancel" },
-        { text: "Delete", style: "destructive", onPress: async () => { await remove(id); } },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            await remove(id);
+          },
+        },
       ]);
     },
     [remove]
@@ -99,10 +113,10 @@ export default function Vc() {
           <View style={styles.cardBg1} />
           <View style={styles.cardBg2} />
 
-          {/* PSAU logo — TOP RIGHT */}
+         
           <View style={styles.logoBadge}>
             <Image
-              source={require("../../assets/images/psau_logo.png")}
+              source={require("../../assets/images/no_vc_image.png")}
               style={styles.cardLogo}
               resizeMode="contain"
             />
@@ -132,7 +146,14 @@ export default function Vc() {
   return (
     <View style={styles.screen}>
       {vcs.length === 0 ? (
-        <Text style={styles.muted}>No credentials yet. Use “Collect”.</Text>
+        <View style={styles.emptyState}>
+          <Image
+            source={require("../../assets/images/no_vc_image.png")}
+            style={styles.emptyImage}
+            resizeMode="contain"
+          />
+          <Text style={styles.emptyText}>There are no credentials in your wallet.</Text>
+        </View>
       ) : (
         <>
           {/* Slider */}
@@ -221,6 +242,26 @@ export default function Vc() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, paddingTop: vs(16), backgroundColor: "#F9FAFB" },
+
+  // Empty state
+  emptyState: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: ms(24),
+  },
+  emptyImage: {
+    width: s(220),
+    height: vs(180),
+    marginBottom: vs(16),
+  },
+  emptyText: {
+    color: "#6b7280",
+    fontSize: s(14),
+    textAlign: "center",
+    fontWeight: "600",
+  },
+
   muted: { color: "#6b7280", textAlign: "center", marginTop: vs(24) },
 
   // Card slider (DARK GREEN THEME)

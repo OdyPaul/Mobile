@@ -17,10 +17,56 @@ import { Camera as FaceCamera } from "react-native-vision-camera-face-detector";
 
 /**
  * FaceVerifier
- * - Shows blink-gated capture (open → close → reopen) to enable shutter
+ * - Guided liveness: blink + 3 head movements (LEFT/RIGHT/UP/DOWN)
  * - Renders its own UI and calls onClose() when user taps "‹ Back"
- * - Optionally calls onCapture(uri) after a successful shot
+ * - Calls onCapture(uri) after a successful shot
  */
+
+/* =================== CONFIG =================== */
+
+// Blink/liveness
+const REQUIRED_MOVES = 3;
+const OPEN_T = 0.6;
+const CLOSED_T = 0.3;
+const CONSEC = 3;
+const CLOSE_MAX_MS = 900;
+const TOTAL_TIMEOUT_MS = 7000;
+
+// Pose / head movement
+const ACTIONS = ["TURN_LEFT", "TURN_RIGHT", "LOOK_UP", "LOOK_DOWN"];
+const ACTION_LABEL = {
+  TURN_LEFT: "Turn head LEFT",
+  TURN_RIGHT: "Turn head RIGHT",
+  LOOK_UP: "Look UP",
+  LOOK_DOWN: "Look DOWN",
+};
+const ACTION_CONSEC = 3;
+const ACTION_TIMEOUT_MS = 5000; // per movement
+const YAW_DEG = 15;
+const PITCH_DEG = 12;
+
+const isNum = (v) => typeof v === "number" && Number.isFinite(v);
+
+/** Normalize pose fields across plugin variants */
+const getAngles = (f) => {
+  const yaw =
+    (isNum(f?.yawAngle) ? f.yawAngle : null) ??
+    (isNum(f?.headEulerAngleY) ? f.headEulerAngleY : null) ??
+    (isNum(f?.yaw) ? f.yaw : 0);
+
+  const pitch =
+    (isNum(f?.pitchAngle) ? f.pitchAngle : null) ??
+    (isNum(f?.headEulerAngleX) ? f.headEulerAngleX : null) ??
+    (isNum(f?.pitch) ? f.pitch : 0);
+
+  const roll =
+    (isNum(f?.rollAngle) ? f.rollAngle : null) ??
+    (isNum(f?.headEulerAngleZ) ? f.headEulerAngleZ : null) ??
+    (isNum(f?.roll) ? f.roll : 0);
+
+  return { yaw: yaw ?? 0, pitch: pitch ?? 0, roll: roll ?? 0 };
+};
+
 export default function FaceVerifier({ onClose, onCapture }) {
   const device = useCameraDevice("front");
   const { hasPermission, requestPermission } = useCameraPermission();
@@ -30,13 +76,16 @@ export default function FaceVerifier({ onClose, onCapture }) {
   const [faces, setFaces] = useState([]);
   const [photo, setPhoto] = useState("");
 
-  // Blink gating (no auto-capture)
-  const OPEN_T = 0.6;
-  const CLOSED_T = 0.3;
-  const CONSEC = 3;
-  const CLOSE_MAX_MS = 900;
-  const TOTAL_TIMEOUT_MS = 7000;
+  // Liveness state
+  const [blinkPassed, setBlinkPassed] = useState(false);
+  const [successCount, setSuccessCount] = useState(0); // how many moves done
+  const [canCapture, setCanCapture] = useState(false);
 
+  // Debug
+  const [debugOpen, setDebugOpen] = useState(null);
+  const [debugPose, setDebugPose] = useState(null);
+
+  // Blink FSM
   const fsmRef = useRef({
     state: "WAIT_OPEN",
     openCount: 0,
@@ -44,37 +93,43 @@ export default function FaceVerifier({ onClose, onCapture }) {
     t0: 0,
     lastSeen: 0,
   });
-  const [livenessPassed, setLivenessPassed] = useState(false);
-  const [countdown, setCountdown] = useState(0);
-  const [canCapture, setCanCapture] = useState(false);
-  const countdownTimerRef = useRef(null);
-  const [debugOpen, setDebugOpen] = useState(null); // shows openness 0..1
+
+  // Head-movement action state
+  const actionRef = useRef({
+    active: false,
+    target: null,
+    baseline: { yaw: 0, pitch: 0 },
+    consec: 0,
+    startedAt: 0,
+    deadline: 0,
+    lastTarget: null,
+  });
+  const [actionTarget, setActionTarget] = useState(null);
+  const [timeLeft, setTimeLeft] = useState(0);
 
   const facePresent = useMemo(() => faces.length === 1, [faces]);
 
+  // Update canCapture whenever liveness pieces change
   useEffect(() => {
-    return () => clearCountdown();
-  }, []);
+    setCanCapture(blinkPassed && successCount >= REQUIRED_MOVES);
+  }, [blinkPassed, successCount]);
 
+  // Action countdown tick
   useEffect(() => {
-    if (countdown > 0) {
-      countdownTimerRef.current = setTimeout(
-        () => setCountdown((n) => n - 1),
-        1000
+    if (!actionRef.current.active) return;
+    const id = setInterval(() => {
+      const now = Date.now();
+      const left = Math.max(
+        0,
+        Math.ceil((actionRef.current.deadline - now) / 1000)
       );
-    } else {
-      clearCountdown();
-      if (livenessPassed) setCanCapture(true);
-    }
-    return () => clearTimeout(countdownTimerRef.current);
-  }, [countdown, livenessPassed]);
-
-  const clearCountdown = () => {
-    if (countdownTimerRef.current) {
-      clearTimeout(countdownTimerRef.current);
-      countdownTimerRef.current = null;
-    }
-  };
+      setTimeLeft(left);
+      if (left <= 0) {
+        rerollAction();
+      }
+    }, 250);
+    return () => clearInterval(id);
+  }, [actionTarget]);
 
   const resetFSM = () => {
     fsmRef.current = {
@@ -88,10 +143,23 @@ export default function FaceVerifier({ onClose, onCapture }) {
 
   const fullReset = () => {
     resetFSM();
-    setLivenessPassed(false);
+    setBlinkPassed(false);
+    setSuccessCount(0);
     setCanCapture(false);
-    setCountdown(0);
     setDebugOpen(null);
+    setDebugPose(null);
+
+    actionRef.current = {
+      active: false,
+      target: null,
+      baseline: { yaw: 0, pitch: 0 },
+      consec: 0,
+      startedAt: 0,
+      deadline: 0,
+      lastTarget: null,
+    };
+    setActionTarget(null);
+    setTimeLeft(0);
   };
 
   const askPermissionAndStart = async () => {
@@ -124,85 +192,193 @@ export default function FaceVerifier({ onClose, onCapture }) {
     fullReset();
   };
 
-  const getEyeOpenness = (face) => {
-    const candidates = [
-      face?.leftEyeOpenProbability,
-      face?.rightEyeOpenProbability,
-      face?.leftEyeOpen,
-      face?.rightEyeOpen,
-      face?.leftEye?.probability,
-      face?.rightEye?.probability,
-    ].filter((v) => typeof v === "number");
-    if (!candidates.length) return null;
-    return Math.max(...candidates);
+  const eyeOpenness = (f) => {
+    const vals = [
+      f?.leftEyeOpenProbability,
+      f?.rightEyeOpenProbability,
+      f?.leftEyeOpen,
+      f?.rightEyeOpen,
+    ].filter((v) => isNum(v) && v >= 0 && v <= 1);
+    return vals.length ? Math.max(...vals) : null;
   };
 
+  const pickTarget = (last) => {
+    const pool = ACTIONS.filter((a) => a !== last);
+    return pool[Math.floor(Math.random() * pool.length)];
+  };
+
+  const startAction = (face) => {
+    if (successCount >= REQUIRED_MOVES) return; // already done
+    const { yaw, pitch } = getAngles(face);
+    const target = pickTarget(actionRef.current.lastTarget);
+    const now = Date.now();
+    actionRef.current = {
+      active: true,
+      target,
+      baseline: { yaw, pitch },
+      consec: 0,
+      startedAt: now,
+      deadline: now + ACTION_TIMEOUT_MS,
+      lastTarget: target,
+    };
+    setActionTarget(target);
+    setTimeLeft(Math.ceil(ACTION_TIMEOUT_MS / 1000));
+    Toast.show({
+      type: "info",
+      text1: `Move ${successCount + 1}/${REQUIRED_MOVES}: ${
+        ACTION_LABEL[target]
+      }`,
+    });
+  };
+
+  const rerollAction = () => {
+    if (successCount >= REQUIRED_MOVES) {
+      actionRef.current.active = false;
+      setActionTarget(null);
+      setTimeLeft(0);
+      return;
+    }
+    const current = faces?.[0];
+    if (!current) {
+      actionRef.current.active = false;
+      setActionTarget(null);
+      setTimeLeft(0);
+      return;
+    }
+    startAction(current);
+  };
+
+  const actionSatisfied = (target, baseline, current) => {
+    const dyaw = current.yaw - baseline.yaw;
+    const dpitch = current.pitch - baseline.pitch;
+    switch (target) {
+      case "TURN_LEFT":
+        return dyaw >= YAW_DEG;
+      case "TURN_RIGHT":
+        return dyaw <= -YAW_DEG;
+      case "LOOK_UP":
+        return dpitch <= -PITCH_DEG;
+      case "LOOK_DOWN":
+        return dpitch >= PITCH_DEG;
+      default:
+        return false;
+    }
+  };
+
+  /* -------- main face callback -------- */
   const onFaces = (detected) => {
     const arr = Array.isArray(detected) ? detected : [];
     setFaces(arr);
 
     if (arr.length !== 1) {
-      if ((livenessPassed || canCapture || countdown > 0) && cameraOn) {
-        Toast.show({ type: "info", text1: "Show exactly one face" });
+      // Lost single face → relax everything, but keep previous success so far
+      const now = Date.now();
+      const f = fsmRef.current;
+      if (f.lastSeen && now - f.lastSeen > 1000) {
+        resetFSM();
+        setBlinkPassed(false);
       }
-      setLivenessPassed(false);
-      setCanCapture(false);
-      setCountdown(0);
       setDebugOpen(null);
-      resetFSM();
+      setDebugPose(null);
       return;
     }
 
-    // --- BLINK FSM ---
     const face = arr[0];
-    const openness = getEyeOpenness(face);
-    setDebugOpen(typeof openness === "number" ? Number(openness.toFixed(2)) : null);
-
-    if (typeof openness !== "number") {
-      // If you see null here, classification probably isn't enabled (see faceDetectionOptions below)
-      return;
-    }
-
+    const open = eyeOpenness(face);
     const now = Date.now();
-    const f = fsmRef.current;
-    f.lastSeen = now;
+    const fsm = fsmRef.current;
 
-    if (openness >= OPEN_T) {
-      f.openCount += 1;
-      f.closeCount = 0;
-    } else if (openness <= CLOSED_T) {
-      f.closeCount += 1;
-      f.openCount = 0;
+    if (open == null) {
+      setDebugOpen("—");
     } else {
-      f.openCount = Math.max(0, f.openCount - 1);
-      f.closeCount = Math.max(0, f.closeCount - 1);
+      setDebugOpen(Number(open.toFixed(2)));
     }
 
-    if (!f.t0) f.t0 = now;
-    if (now - f.t0 > TOTAL_TIMEOUT_MS) {
-      resetFSM();
-      return;
-    }
+    const angles = getAngles(face);
+    setDebugPose(
+      `yaw ${angles.yaw.toFixed(1)}° • pitch ${angles.pitch.toFixed(1)}°`
+    );
 
-    if (f.state === "WAIT_OPEN" && f.openCount >= CONSEC) {
-      f.state = "WAIT_CLOSE";
-      f.t0 = now;
-    } else if (f.state === "WAIT_CLOSE" && f.closeCount >= CONSEC) {
-      f.state = "WAIT_REOPEN";
-      f.t0 = now;
-    } else if (f.state === "WAIT_REOPEN") {
-      if (now - f.t0 > CLOSE_MAX_MS) {
+    fsm.lastSeen = now;
+
+    // --- BLINK PHASE ---
+    if (!blinkPassed) {
+      if (isNum(open)) {
+        if (open >= OPEN_T) {
+          fsm.openCount += 1;
+          fsm.closeCount = 0;
+        } else if (open <= CLOSED_T) {
+          fsm.closeCount += 1;
+          fsm.openCount = 0;
+        }
+      }
+
+      if (!fsm.t0) fsm.t0 = now;
+      if (now - fsm.t0 > TOTAL_TIMEOUT_MS) {
         resetFSM();
         return;
       }
-      if (f.openCount >= CONSEC && !livenessPassed) {
-        setLivenessPassed(true);
-        setCanCapture(false);
-        setCountdown(3); // 3..2..1 then unlock shutter
-        Toast.show({
-          type: "success",
-          text1: "Blink detected — ready for capture",
-        });
+
+      if (fsm.state === "WAIT_OPEN" && fsm.openCount >= CONSEC) {
+        fsm.state = "WAIT_CLOSE";
+        fsm.t0 = now;
+      } else if (fsm.state === "WAIT_CLOSE" && fsm.closeCount >= CONSEC) {
+        fsm.state = "WAIT_REOPEN";
+        fsm.t0 = now;
+      } else if (fsm.state === "WAIT_REOPEN") {
+        if (now - fsm.t0 > CLOSE_MAX_MS) {
+          resetFSM();
+          return;
+        }
+        if (fsm.openCount >= CONSEC) {
+          setBlinkPassed(true);
+          Toast.hide();
+          Toast.show({ type: "success", text1: "Blink detected" });
+          startAction(face); // start first movement
+        }
+      }
+      return;
+    }
+
+    // --- ACTION (HEAD MOVEMENT) PHASE ---
+    if (successCount < REQUIRED_MOVES) {
+      if (!actionRef.current.active) {
+        startAction(face);
+        return;
+      }
+
+      if (Date.now() > actionRef.current.deadline) {
+        rerollAction();
+        return;
+      }
+
+      if (
+        actionSatisfied(
+          actionRef.current.target,
+          actionRef.current.baseline,
+          angles
+        )
+      ) {
+        actionRef.current.consec += 1;
+        if (actionRef.current.consec >= ACTION_CONSEC) {
+          const next = successCount + 1;
+          setSuccessCount(next);
+          actionRef.current.active = false;
+          setActionTarget(null);
+          setTimeLeft(0);
+
+          if (next >= REQUIRED_MOVES) {
+            Toast.hide();
+            Toast.show({
+              type: "success",
+              text1: "Liveness passed — you can now take a photo",
+            });
+          } else {
+            setTimeout(() => startAction(face), 400);
+          }
+        }
+      } else {
+        actionRef.current.consec = 0;
       }
     }
   };
@@ -210,12 +386,17 @@ export default function FaceVerifier({ onClose, onCapture }) {
   const takeShot = async () => {
     if (!cameraRef.current) return;
     if (!canCapture) {
-      Toast.show({ type: "info", text1: "Blink to enable the shutter" });
+      Toast.show({
+        type: "info",
+        text1: `Complete blink + ${REQUIRED_MOVES} head moves first`,
+      });
       return;
     }
     try {
       const shot = await cameraRef.current.takePhoto({});
-      const uri = `file://${shot.path}`;
+      const uri = shot?.path?.startsWith("file://")
+        ? shot.path
+        : `file://${shot.path}`;
       setPhoto(uri);
       setCameraOn(false);
       onCapture?.(uri);
@@ -228,12 +409,14 @@ export default function FaceVerifier({ onClose, onCapture }) {
     }
   };
 
-  // ---------- UI ----------
+  /* =================== UI =================== */
+
+  // After capture: preview with Retake / Use Photo
   if (photo) {
     return (
       <View style={styles.container}>
         <Image source={{ uri: photo }} style={styles.preview} />
-        <View style={styles.bottomRow}>
+        <View style={styles.bottomRowFixed}>
           <TouchableOpacity style={styles.secondaryBtn} onPress={retake}>
             <Text style={styles.secondaryText}>Retake</Text>
           </TouchableOpacity>
@@ -246,11 +429,14 @@ export default function FaceVerifier({ onClose, onCapture }) {
     );
   }
 
+  // Pre-camera screen
   if (!cameraOn) {
     return (
       <View style={styles.center}>
         <Text style={styles.title}>Face Verification</Text>
-        <Text style={styles.subtitle}>Tap below to activate your camera.</Text>
+        <Text style={styles.subtitle}>
+          We’ll ask you to blink and move your head to confirm liveness.
+        </Text>
         <TouchableOpacity
           onPress={askPermissionAndStart}
           style={styles.primaryBtn}
@@ -266,6 +452,7 @@ export default function FaceVerifier({ onClose, onCapture }) {
     );
   }
 
+  // Waiting for permission / device
   if (!device || !hasPermission) {
     return (
       <View style={styles.center}>
@@ -281,12 +468,10 @@ export default function FaceVerifier({ onClose, onCapture }) {
     );
   }
 
-  const fsmState = fsmRef.current.state;
-
-  // IMPORTANT: classificationMode: 'all' to get eye probabilities
+  // Detection options: MUST have classificationMode: 'all' for eye probabilities
   const faceDetectionOptions = {
     performanceMode: "fast",
-    classificationMode: "all", // <-- REQUIRED for left/rightEyeOpenProbability
+    classificationMode: "all",
     contourMode: "none",
     landmarkMode: "none",
     trackingEnabled: false,
@@ -313,7 +498,7 @@ export default function FaceVerifier({ onClose, onCapture }) {
           </TouchableOpacity>
         </View>
 
-        {/* Top instructions */}
+        {/* Top overlay instructions */}
         <View style={styles.overlayTop}>
           {faces.length === 0 && (
             <Text style={styles.overlayText}>Show your face in the frame</Text>
@@ -321,32 +506,37 @@ export default function FaceVerifier({ onClose, onCapture }) {
           {faces.length > 1 && (
             <Text style={styles.overlayText}>Only one person please</Text>
           )}
-          {facePresent && !livenessPassed && (
+          {facePresent && !blinkPassed && (
+            <Text style={styles.overlayText}>Blink to verify liveness</Text>
+          )}
+          {facePresent && blinkPassed && successCount < REQUIRED_MOVES && (
             <Text style={styles.overlayText}>
-              {fsmState === "WAIT_OPEN"
-                ? "Step 1: Eyes open"
-                : fsmState === "WAIT_CLOSE"
-                ? "Step 2: Blink (close eyes)"
-                : "Step 3: Open eyes again"}
+              Move {successCount + 1}/{REQUIRED_MOVES}:{" "}
+              {actionTarget ? ACTION_LABEL[actionTarget] : "Get ready…"}
+              {timeLeft ? ` • ${timeLeft}s` : ""}
             </Text>
           )}
-          {livenessPassed && (
+          {facePresent && canCapture && (
             <Text style={styles.overlayText}>
-              Ready for capture {countdown > 0 ? `• ${countdown}` : ""}
+              Liveness passed — tap the shutter
             </Text>
           )}
-          {typeof debugOpen === "number" && (
-            <Text style={styles.debugText}>Eye openness: {debugOpen}</Text>
+
+          {debugOpen !== null && (
+            <Text style={styles.debugText}>Eye: {String(debugOpen)}</Text>
+          )}
+          {debugPose && (
+            <Text style={styles.debugText}>{String(debugPose)}</Text>
           )}
         </View>
 
-        {/* Faces counter (debug) */}
+        {/* Faces counter (tiny debug) */}
         <View style={styles.overlayCounter}>
           <Text style={styles.counterText}>Faces: {faces.length}</Text>
         </View>
       </View>
 
-      {/* Shutter: enabled only after countdown finished */}
+      {/* Shutter: enabled only after liveness passed */}
       <View style={styles.bottomRow}>
         <TouchableOpacity
           onPress={takeShot}
@@ -354,7 +544,9 @@ export default function FaceVerifier({ onClose, onCapture }) {
           disabled={!canCapture}
         />
         {!canCapture && (
-          <Text style={styles.hint}>Blink to enable the shutter</Text>
+          <Text style={styles.hint}>
+            Blink + complete {REQUIRED_MOVES} head moves to enable shutter
+          </Text>
         )}
       </View>
 
@@ -373,7 +565,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   title: { color: "#fff", fontSize: 22, fontWeight: "700", marginBottom: 8 },
-  subtitle: { color: "#aaa", fontSize: 14, textAlign: "center", marginBottom: 20 },
+  subtitle: {
+    color: "#aaa",
+    fontSize: 14,
+    textAlign: "center",
+    marginBottom: 20,
+  },
   primaryBtn: {
     backgroundColor: "#4F8EF7",
     paddingHorizontal: 18,
@@ -405,8 +602,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: "center",
   },
-  overlayText: { color: "#fff", fontWeight: "700" },
-  debugText: { color: "#ddd", fontSize: 12, marginTop: 2 },
+  overlayText: { color: "#fff", fontWeight: "700", textAlign: "center" },
+  debugText: { color: "#ddd", fontSize: 11, marginTop: 2 },
 
   overlayCounter: {
     position: "absolute",
@@ -419,7 +616,23 @@ const styles = StyleSheet.create({
   },
   counterText: { color: "#fff", fontWeight: "600", fontSize: 12 },
 
-  bottomRow: { position: "absolute", bottom: 28, width: "100%", alignItems: "center", gap: 8 },
+  bottomRow: {
+    position: "absolute",
+    bottom: 28,
+    width: "100%",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  bottomRowFixed: {
+    position: "absolute",
+    bottom: 28,
+    width: "100%",
+    flexDirection: "row",
+    justifyContent: "space-evenly",
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
 
   backWrap: { position: "absolute", bottom: 28, left: 20 },
   backBtn: {
@@ -430,7 +643,12 @@ const styles = StyleSheet.create({
   },
   backText: { color: "#fff", fontWeight: "700" },
 
-  shutterButton: { width: 70, height: 70, borderRadius: 35, backgroundColor: "#fff" },
+  shutterButton: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: "#fff",
+  },
   shutterDisabled: { backgroundColor: "#777" },
   hint: { color: "#ccc", marginTop: 6, fontSize: 12 },
 
