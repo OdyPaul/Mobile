@@ -13,11 +13,11 @@ const initialState = {
 
 export const createVcRequest = createAsyncThunk(
   "vcRequest/create",
-  async ({ type, purpose }, thunkAPI) => { // ✅ accept purpose
+  async ({ type, purpose, anchorNow }, thunkAPI) => {
     try {
       const token = thunkAPI.getState()?.auth?.user?.token;
       if (!token) throw new Error("Missing auth token");
-      return await vcRequestService.createVcRequest({ type, purpose }, token); // ✅
+      return await vcRequestService.createVcRequest({ type, purpose, anchorNow }, token);
     } catch (err) {
       return thunkAPI.rejectWithValue(
         err?.response?.data?.message || err?.message || "Request failed"
@@ -58,26 +58,37 @@ const slice = createSlice({
   extraReducers: (b) => {
     b
       .addCase(createVcRequest.pending, (s) => {
-        s.isCreating = true; s.isError = false; s.message = "";
+        s.isCreating = true;
+        s.isError = false;
+        s.message = "";
       })
       .addCase(createVcRequest.fulfilled, (s, a) => {
-        s.isCreating = false; s.isSuccess = true;
+        s.isCreating = false;
+        s.isSuccess = true;
         s.created = a.payload;
         s.items = [a.payload, ...(s.items || [])];
       })
       .addCase(createVcRequest.rejected, (s, a) => {
-        s.isCreating = false; s.isError = true; s.message = a.payload;
+        s.isCreating = false;
+        s.isError = true;
+        s.message = a.payload;
       });
 
     b
       .addCase(getMyVcRequests.pending, (s) => {
-        s.isLoading = true; s.isError = false; s.message = "";
+        s.isLoading = true;
+        s.isError = false;
+        s.message = "";
       })
       .addCase(getMyVcRequests.fulfilled, (s, a) => {
-        s.isLoading = false; s.isSuccess = true; s.items = a.payload || [];
+        s.isLoading = false;
+        s.isSuccess = true;
+        s.items = a.payload || [];
       })
       .addCase(getMyVcRequests.rejected, (s, a) => {
-        s.isLoading = false; s.isError = true; s.message = a.payload;
+        s.isLoading = false;
+        s.isError = true;
+        s.message = a.payload;
       });
   },
 });

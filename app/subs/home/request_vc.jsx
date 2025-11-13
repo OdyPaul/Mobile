@@ -50,6 +50,9 @@ export default function RequestVC() {
   const [purpose, setPurpose] = useState(""); // store the VALUE
   const [showPurposeMenu, setShowPurposeMenu] = useState(false);
 
+  // NEW: anchor now toggle
+  const [anchorNow, setAnchorNow] = useState(false);
+
   // liveness flow
   const [showLiveness, setShowLiveness] = useState(false);
 
@@ -81,10 +84,12 @@ export default function RequestVC() {
   const handleLivenessPassed = async () => {
     setShowLiveness(false);
     try {
-      await dispatch(createVcRequest({ type, purpose })).unwrap();
+      // ✅ now sending anchorNow together with type & purpose
+      await dispatch(createVcRequest({ type, purpose, anchorNow })).unwrap();
       Alert.alert("Success", "Your credential request was submitted.");
       setPurpose("");
       setShowPurposeMenu(false);
+      setAnchorNow(false); // reset toggle after success
     } catch (e) {
       Alert.alert("Submit failed", String(e || "Unknown error"));
     }
@@ -201,6 +206,29 @@ export default function RequestVC() {
           </View>
         )}
 
+        {/* Anchor now toggle */}
+        <View style={styles.anchorRow}>
+          <Pressable
+            onPress={() => setAnchorNow((v) => !v)}
+            style={styles.anchorPressable}
+            hitSlop={10}
+          >
+            <Ionicons
+              name={anchorNow ? "checkbox-outline" : "square-outline"}
+              size={20}
+              color={anchorNow ? PRIMARY : "#6b7280"}
+              style={{ marginRight: s(10) }}
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.anchorLabel}>Anchor now</Text>
+              <Text style={styles.anchorHint}>
+                When enabled, your request will create a draft that is marked for
+                blockchain anchoring once payment is completed.
+              </Text>
+            </View>
+          </Pressable>
+        </View>
+
         {/* Submit */}
         <TouchableOpacity
           style={[
@@ -312,6 +340,26 @@ const styles = StyleSheet.create({
     borderBottomColor: "#F3F4F6",
   },
   dropdownText: { fontSize: s(14), color: "#111827", flexShrink: 1 },
+
+  // Anchor now styles
+  anchorRow: {
+    marginTop: vs(16),
+  },
+  anchorPressable: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    paddingVertical: vs(6),
+  },
+  anchorLabel: {
+    fontSize: s(13),
+    fontWeight: "600",
+    color: "#111827",
+  },
+  anchorHint: {
+    fontSize: s(11),
+    color: "#6B7280",
+    marginTop: 2,
+  },
 
   button: {
     backgroundColor: PRIMARY,

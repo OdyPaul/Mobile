@@ -1,9 +1,16 @@
 import axios from "axios";
 const API_URL = (process.env.EXPO_PUBLIC_API_URL || "http://localhost:5000").replace(/\/+$/, "");
 
-const createVcRequest = async ({ type, purpose }, token) => {
+// Now accepts anchorNow (boolean)
+const createVcRequest = async ({ type, purpose, anchorNow }, token) => {
   const config = { headers: { Authorization: `Bearer ${token}` } };
-  const { data } = await axios.post(`${API_URL}/api/vc-requests`, { type, purpose }, config);
+
+  const payload = { type, purpose };
+  if (typeof anchorNow === "boolean") {
+    payload.anchorNow = anchorNow;
+  }
+
+  const { data } = await axios.post(`${API_URL}/api/vc-requests`, payload, config);
   return data;
 };
 
