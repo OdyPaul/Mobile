@@ -1,14 +1,13 @@
-import React, { useEffect, useRef, useState } from "react";
+// app/verification/confirm.jsx (adjust the path to your screen)
+import React, { useRef, useState } from "react";
 import {
   View, Text, Image, StyleSheet, ScrollView,
   TouchableOpacity, ActivityIndicator, Alert, LogBox
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useDispatch, useSelector } from "react-redux";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useDispatch } from "react-redux";
 import { s, vs } from "react-native-size-matters";
 import * as ImageManipulator from "expo-image-manipulator";
-import { isAddress, getAddress } from "ethers";
 import { createVerificationRequest } from "../../features/verification/verificationSlice";
 import { uploadSelfie, uploadId } from "../../features/photo/photoSlice";
 
@@ -31,24 +30,10 @@ const safeParse = (data) => {
   try {
     if (!data) return {};
     if (typeof data === "object") return data;
-    const s = String(data).trim();
-    return s.startsWith("{") || s.startsWith("[") ? JSON.parse(s) : {};
+    const str = String(data).trim();
+    return str.startsWith("{") || str.startsWith("[") ? JSON.parse(str) : {};
   } catch {
     return {};
-  }
-};
-
-const normalizeDid = (candidate) => {
-  if (!candidate) return null;
-  try {
-    let addr = candidate.startsWith("did:polygon:")
-      ? candidate.slice("did:polygon:".length)
-      : candidate;
-    if (!addr.startsWith("0x")) return null;
-    if (!isAddress(addr)) return null;
-    return `did:polygon:${getAddress(addr)}`;
-  } catch {
-    return null;
   }
 };
 
@@ -56,44 +41,9 @@ export default function Confirm() {
   const { personal, education, selfieUri, idUri, idType, idNumber } = useLocalSearchParams();
   const router = useRouter();
   const dispatch = useDispatch();
-  const reduxUser = useSelector((s) => s.auth.user);
 
-  const [did, setDid] = useState(null);
   const [loading, setLoading] = useState(false);
   const inFlightRef = useRef(false);
-
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const walletSessionRaw = await AsyncStorage.getItem("walletSession");
-        const walletAddr = walletSessionRaw ? JSON.parse(walletSessionRaw)?.address : null;
-
-        const reduxAddr =
-          reduxUser?.did ||
-          reduxUser?.walletAddress ||
-          reduxUser?.user?.did ||
-          reduxUser?.user?.walletAddress ||
-          null;
-
-        const userRaw = await AsyncStorage.getItem("user");
-        const stored = userRaw ? JSON.parse(userRaw) : null;
-        const storedAddr =
-          stored?.did ||
-          stored?.walletAddress ||
-          stored?.user?.did ||
-          stored?.user?.walletAddress ||
-          null;
-
-        const chosen = walletAddr || reduxAddr || storedAddr || null;
-        const normalized = normalizeDid(chosen);
-        if (mounted) setDid(normalized);
-      } catch {
-        if (mounted) setDid(null);
-      }
-    })();
-    return () => { mounted = false; };
-  }, [reduxUser]);
 
   const personalData = safeParse(personal);
   const educationData = safeParse(education);
@@ -117,7 +67,6 @@ export default function Confirm() {
   };
 
   const validate = () => {
-    if (!did) { Alert.alert("Link wallet", "Please link your wallet before submitting."); return false; }
     if (!personalData?.fullName || !personalData?.address || !personalData?.birthPlace || !personalData?.birthDate) {
       Alert.alert("Missing info", "Personal information is incomplete."); return false;
     }
@@ -151,7 +100,6 @@ export default function Confirm() {
           education: educationData,
           selfieImageId,
           idImageId,
-          did,
           idMeta: { idType, idNumber },
         })
       ).unwrap();
@@ -202,7 +150,11 @@ export default function Confirm() {
         </View>
       ) : null}
 
-      <TouchableOpacity style={[styles.button, (loading || !did) && { opacity: 0.6 }]} onPress={handleSubmit} disabled={loading || !did}>
+      <TouchableOpacity
+        style={[styles.button, loading && { opacity: 0.6 }]}
+        onPress={handleSubmit}
+        disabled={loading}
+      >
         {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Submit</Text>}
       </TouchableOpacity>
     </ScrollView>

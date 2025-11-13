@@ -1,6 +1,8 @@
+// features/auth/authService.js
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { clearWalletConnectCache } from "../../hooks/clearWalletConnectCache";
+
 const API_URL = (process.env.EXPO_PUBLIC_API_URL || "").replace(/\/+$/, "");
 
 // -----------------------------------------------------------------------------
@@ -35,7 +37,7 @@ const register = async (userData) => {
 const login = async (userData) => {
   await clearWalletConnectCache();
   const { data } = await axios.post(`${API_URL}/api/mobile/users/login`, userData);
-  console.log("Login API Response:", JSON.stringify(data, null, 2)); // 👈 add this
+  console.log("Login API Response:", JSON.stringify(data, null, 2));
 
   const rawUser = data?.user ?? data;
   const token = data?.token ?? rawUser?.token ?? "";
@@ -45,49 +47,16 @@ const login = async (userData) => {
   return flattened;
 };
 
-
-// -----------------------------------------------------------------------------
-// UPDATE DID
-// -----------------------------------------------------------------------------
-const updateDID = async (walletAddress) => {
-  const user = JSON.parse(await AsyncStorage.getItem("user"));
-  if (!user || !user._id) throw new Error("User not found");
-
-  const token = user.token || (await AsyncStorage.getItem("token"));
-  if (!token) throw new Error("Missing auth token");
-
-  const config = {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-  };
-
-  const { data } = await axios.put(
-    `${API_URL}/api/mobile/${user._id}/did`,
-    { walletAddress }, // ✅ correctly sends the address or null
-    config
-  );
-
-  const updatedUser = data?.user || data;
-
-  // ✅ Sync to storage
-  if (updatedUser) {
-    await AsyncStorage.setItem("user", JSON.stringify(updatedUser));
-  }
-
-  return updatedUser;
-};
-
-
 // -----------------------------------------------------------------------------
 // LOGOUT
 // -----------------------------------------------------------------------------
 const logout = async () => {
-await AsyncStorage.multiRemove(["user", "token", "walletSession"]);
+  await AsyncStorage.multiRemove(["user", "token", "walletSession"]);
 };
 
-
+// -----------------------------------------------------------------------------
+// OTP
+// -----------------------------------------------------------------------------
 const requestEmailOtp = async (email) => {
   const { data } = await axios.post(`${API_URL}/api/mobile/otp/request`, { email });
   return data; // { success: true }
@@ -96,14 +65,11 @@ const verifyEmailOtp = async (email, code) => {
   const { data } = await axios.post(`${API_URL}/api/mobile/otp/verify`, { email, code });
   return data; // { success: true, otpSession }
 };
-// -----------------------------------------------------------------------------
-// EXPORT
-// -----------------------------------------------------------------------------
+
 export default {
   register,
   login,
-  updateDID,
   logout,
-   requestEmailOtp,
+  requestEmailOtp,
   verifyEmailOtp,
 };

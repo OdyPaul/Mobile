@@ -57,7 +57,7 @@ export default function Settings() {
     { title: "Wallet Address", icon: "wallet-outline", action: () => router.replace("/subs/walletConnect") },
     { title: "Change Password", icon: "lock-closed-outline" },
     { title: "Terms of Service", icon: "document-text-outline" },
-    { title: "FAQs", icon: "help-circle-outline" },
+    { title: "FAQs", icon: "help-circle-outline", action: () => router.replace("/subs/faceVerifyGallery") },
     { title: "Log out", icon: "log-out-outline", action: () => setShowLogoutModal(true) },
   ];
 

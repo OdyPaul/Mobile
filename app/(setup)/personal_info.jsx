@@ -206,7 +206,7 @@ export default function PersonalInfo() {
 
 const styles = StyleSheet.create({
   container: { flexGrow: 1, padding: s(20), alignItems: "center" },
-  title: { fontSize: s(22), fontWeight: "700", marginBottom: vs(10) },
+  title: { fontSize: s(22), fontWeight: "700", marginBottom: vs(10), marginTop:vs(30), },
   label: { fontSize: s(12), fontWeight: "600", color: LABEL, marginBottom: vs(6), alignSelf: "flex-start" },
   lineInput: {
     width: "100%",

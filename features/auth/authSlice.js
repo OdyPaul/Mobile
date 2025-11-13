@@ -1,3 +1,4 @@
+// features/auth/authSlice.js
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import authService from "./authService";
@@ -28,18 +29,6 @@ export const login = createAsyncThunk("auth/login", async (user, thunkAPI) => {
     return data;
   } catch (error) {
     const message = error.response?.data?.message || error.message || "Login failed";
-    return thunkAPI.rejectWithValue(message);
-  }
-});
-
-// --- Update DID ---
-export const updateDID = createAsyncThunk("auth/updateDID", async (did, thunkAPI) => {
-  try {
-    const data = await authService.updateDID(did);
-    await AsyncStorage.setItem("user", JSON.stringify(data));
-    return data;
-  } catch (error) {
-    const message = error.response?.data?.message || error.message || "Failed to update DID";
     return thunkAPI.rejectWithValue(message);
   }
 });
@@ -121,19 +110,6 @@ export const authSlice = createSlice({
         state.isError = true;
         state.message = action.payload;
         state.user = null;
-      })
-
-      // Update DID
-      .addCase(updateDID.pending, (state) => { state.isLoading = true; })
-      .addCase(updateDID.fulfilled, (state, action) => {
-        state.isLoading = false;
-        state.isSuccess = true;
-        state.user = action.payload;
-      })
-      .addCase(updateDID.rejected, (state, action) => {
-        state.isLoading = false;
-        state.isError = true;
-        state.message = action.payload;
       })
 
       // Logout

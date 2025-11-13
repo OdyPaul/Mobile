@@ -9,6 +9,8 @@ export default function SubsLayout() {
       <Stack.Screen name="vc/share" />
       <Stack.Screen name="settings/profile" />
       <Stack.Screen name="home/request_vc" />
+      <Stack.Screen name="faceVerifyGallery" />
+
 
 
     </Stack>
