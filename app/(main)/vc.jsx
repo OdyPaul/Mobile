@@ -116,7 +116,7 @@ export default function Vc() {
          
           <View style={styles.logoBadge}>
             <Image
-              source={require("../../assets/images/no_vc_image.png")}
+              source={require("../../assets/images/psau_logo.png")}
               style={styles.cardLogo}
               resizeMode="contain"
             />

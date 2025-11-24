@@ -30,7 +30,8 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.psau.credpocket"
+      "package": "com.psau.credpocket",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "output": "static",

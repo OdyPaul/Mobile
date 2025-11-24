@@ -22,7 +22,12 @@ export default function Selfie() {
   if (!permission) return <View style={[styles.screen, { backgroundColor: BG }]} />;
   if (!permission.granted) {
     return (
-      <View style={[styles.screen, { backgroundColor: BG, justifyContent: "center", alignItems: "center" }]}>
+      <View
+        style={[
+          styles.screen,
+          { backgroundColor: BG, justifyContent: "center", alignItems: "center" },
+        ]}
+      >
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Camera Permission</Text>
           <Text style={styles.cardText}>We need access to your camera to take a selfie.</Text>
@@ -66,15 +71,36 @@ export default function Selfie() {
   // Camera screen
   if (showCamera) {
     return (
-      <View style={{ flex: 1, backgroundColor: "#000" }}>
-        <CameraView ref={(r) => (cameraRef.current = r)} style={{ flex: 1 }} facing={facing} />
-        <View style={styles.overlay}>
-          <TouchableOpacity style={[styles.button, { backgroundColor: "#6c757d" }]} onPress={() => setFacing((p) => (p === "front" ? "back" : "front"))}>
-            <Text style={styles.btnText}>Flip</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.button} onPress={takePhoto}>
-            <Text style={styles.btnText}>Capture</Text>
-          </TouchableOpacity>
+      <View style={styles.cameraScreen}>
+        <View style={styles.cameraWrapper}>
+          <CameraView
+            ref={(r) => (cameraRef.current = r)}
+            style={{ flex: 1 }}
+            facing={facing}
+          />
+        </View>
+
+        {/* Black bottom bar with padding + actions */}
+        <View style={styles.cameraBottomBar}>
+          <View style={styles.cameraBottomInner}>
+            <TouchableOpacity
+              style={[styles.camSmallBtn, { backgroundColor: "#333" }]}
+              onPress={() => setShowCamera(false)}
+            >
+              <Text style={styles.btnText}>Cancel</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.camCaptureBtn} onPress={takePhoto}>
+              <Text style={styles.btnText}>Capture</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.camSmallBtn, { backgroundColor: "#333" }]}
+              onPress={() => setFacing((p) => (p === "front" ? "back" : "front"))}
+            >
+              <Text style={styles.btnText}>Flip</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     );
@@ -82,7 +108,12 @@ export default function Selfie() {
 
   // Preview + continue
   return (
-    <View style={[styles.screen, { backgroundColor: BG, padding: s(20), alignItems: "center" }]}>
+    <View
+      style={[
+        styles.screen,
+        { backgroundColor: BG, padding: s(20), alignItems: "center" },
+      ]}
+    >
       <Text style={styles.title}>Preview Selfie</Text>
       <View style={styles.card}>
         <Image source={{ uri: photoUri }} style={styles.preview} />
@@ -101,7 +132,10 @@ export default function Selfie() {
         >
           <Text style={styles.btnText}>Use This Photo</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.button, { backgroundColor: "red" }]} onPress={() => setPhotoUri(null)}>
+        <TouchableOpacity
+          style={[styles.button, { backgroundColor: "red" }]}
+          onPress={() => setPhotoUri(null)}
+        >
           <Text style={styles.btnText}>Retake</Text>
         </TouchableOpacity>
       </View>
@@ -124,8 +158,51 @@ const styles = StyleSheet.create({
   },
   cardTitle: { fontSize: s(16), fontWeight: "700", marginBottom: vs(8) },
   cardText: { fontSize: s(14), color: "#55606e", marginBottom: vs(6) },
-  button: { backgroundColor: PRIMARY_GREEN, paddingVertical: vs(12), borderRadius: s(10), alignItems: "center" },
+  button: {
+    backgroundColor: PRIMARY_GREEN,
+    paddingVertical: vs(12),
+    borderRadius: s(10),
+    alignItems: "center",
+  },
   btnText: { color: "#fff", fontWeight: "700" },
+
+  // CAMERA UI
+  cameraScreen: {
+    flex: 1,
+    backgroundColor: "#000",
+  },
+  cameraWrapper: {
+    flex: 1,
+  },
+  cameraBottomBar: {
+    backgroundColor: "#000",
+    paddingVertical: vs(16),
+    paddingHorizontal: s(20),
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#222",
+  },
+  cameraBottomInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  camSmallBtn: {
+    flex: 1,
+    paddingVertical: vs(10),
+    borderRadius: s(999),
+    alignItems: "center",
+    marginHorizontal: s(4),
+  },
+  camCaptureBtn: {
+    flex: 1.4,
+    paddingVertical: vs(12),
+    borderRadius: s(999),
+    alignItems: "center",
+    marginHorizontal: s(4),
+    backgroundColor: PRIMARY_GREEN,
+  },
+
+  // old overlay kept unused (safe to delete if you want)
   overlay: {
     position: "absolute",
     bottom: vs(28),
@@ -134,5 +211,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: s(12),
   },
-  preview: { width: "100%", height: vs(260), borderRadius: s(8), resizeMode: "cover" },
+
+  preview: {
+    width: "100%",
+    height: vs(260),
+    borderRadius: s(8),
+    resizeMode: "cover",
+  },
 });

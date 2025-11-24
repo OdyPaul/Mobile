@@ -1,5 +1,7 @@
 // features/session/verificationSessionService.js
 import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { STORAGE_KEYS } from '../../lib';
 
 const RAW_API = (process.env.EXPO_PUBLIC_API_URL || '').replace(/\/+$/, '');
 const ensureApiBase = (raw) => {
@@ -8,12 +10,30 @@ const ensureApiBase = (raw) => {
 };
 const WEB_BASE = (process.env.EXPO_PUBLIC_WEB_BASE || '').replace(/\/+$/, '');
 
+// ---------- shared auth headers ----------
+async function buildAuthHeaders() {
+  let token = null;
+  try {
+    token =
+      (await AsyncStorage.getItem(STORAGE_KEYS.TOKEN)) ||
+      (await AsyncStorage.getItem('token')) ||
+      (await AsyncStorage.getItem('authToken'));
+  } catch {
+    token = null;
+  }
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+}
+
 // ---------- API calls ----------
 
 // Create a verification session (returns { session_id, verifyUrl, expires_at })
 export async function createVerificationSession({ ttlHours = 168, credential_id, apiOverride } = {}) {
   const base = ensureApiBase(apiOverride || RAW_API);
   const url  = `${base}/verification/session`;
+  const headers = await buildAuthHeaders();
+
   const res = await axios.post(
     url,
     {
@@ -22,7 +42,7 @@ export async function createVerificationSession({ ttlHours = 168, credential_id,
       ...(credential_id ? { credential_id } : {}),
       ui_base: WEB_BASE || undefined,
     },
-    { headers: { 'Content-Type': 'application/json' } }
+    { headers }
   );
   return res.data;
 }
@@ -31,11 +51,10 @@ export async function createVerificationSession({ ttlHours = 168, credential_id,
 export async function presentToSession(sessionId, body, apiOverride) {
   const base = ensureApiBase(apiOverride || RAW_API);
   const url = `${base}/verification/session/${encodeURIComponent(sessionId)}/present`;
-  const res = await axios.post(url, body, { headers: { 'Content-Type': 'application/json' } });
+  const headers = await buildAuthHeaders();
+  const res = await axios.post(url, body, { headers });
   return res.data; // { ok, session, result? }
 }
-
-// ---------- Helpers ----------
 
 // ---------- Helpers ----------
 const get = (obj, path) => {
@@ -46,6 +65,7 @@ const coalesce = (...vals) => vals.find((v) => v !== undefined && v !== null && 
 
 const looksLikeObjectId = (s) => typeof s === 'string' && /^[a-f0-9]{24}$/i.test(s);
 const looksLikePublicKey = (s) => typeof s === 'string' && /^web_[A-Za-z0-9\-_]{6,64}$/.test(s);
+
 /** Extract a resolvable server id from a VC (prefer public key, else mongo _id) */
 export function presentableIdFromVc(vc) {
   // 1) Preferred: server "key" (e.g., web_...)

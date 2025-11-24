@@ -14,8 +14,9 @@ import { useDispatch, useSelector } from "react-redux";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import { s, vs } from "react-native-size-matters";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { createVcRequest } from "../../../features/vc/vcRequestSlice";
-// 👇 adjust path if needed
+import { addLocalNotification } from "../../../features/notif/notifSlice";
 import FaceVerifier from "../../../lib/faceVerifier";
 
 const PRIMARY = "#16A34A";
@@ -42,6 +43,8 @@ const PURPOSE_OPTIONS = [
 
 export default function RequestVC() {
   const dispatch = useDispatch();
+  const router = useRouter();
+
   const user = useSelector((s) => s?.auth?.user);
   const isVerified = String(user?.verified || "").toLowerCase() === "verified";
   const isCreating = useSelector((s) => s?.vcRequest?.isCreating);
@@ -50,7 +53,7 @@ export default function RequestVC() {
   const [purpose, setPurpose] = useState(""); // store the VALUE
   const [showPurposeMenu, setShowPurposeMenu] = useState(false);
 
-  // NEW: anchor now toggle
+  // anchor now toggle
   const [anchorNow, setAnchorNow] = useState(false);
 
   // liveness flow
@@ -74,33 +77,59 @@ export default function RequestVC() {
     return true;
   };
 
-  // Step 1: user taps submit → open liveness checker
   const handlePressSubmit = () => {
     if (!validate()) return;
     setShowLiveness(true);
   };
 
-  // Step 2: liveness OK → actually send VC request
   const handleLivenessPassed = async () => {
     setShowLiveness(false);
     try {
-      // ✅ now sending anchorNow together with type & purpose
-      await dispatch(createVcRequest({ type, purpose, anchorNow })).unwrap();
-      Alert.alert("Success", "Your credential request was submitted.");
+      const res = await dispatch(
+        createVcRequest({ type, purpose, anchorNow })
+      ).unwrap();
+
+      let msg = "Your credential request was submitted.";
+      if (res?.paymentTxNo) {
+        msg += `\n\nPayment reference (TX no):\n${res.paymentTxNo}`;
+      } else {
+        msg +=
+          "\n\nYou may proceed to the cashier/payment section using your student details.";
+      }
+
+      const notifDesc = res?.paymentTxNo
+        ? `Payment reference (TX no): ${res.paymentTxNo}`
+        : "VC request submitted. Proceed to cashier/payment.";
+
+      dispatch(
+        addLocalNotification({
+          type: "vc_request",
+          title: `${type} request submitted`,
+          desc: notifDesc,
+          status: "pending",
+          icon: "document-text-outline",
+          meta: {
+            type,
+            purpose,
+            paymentTxNo: res?.paymentTxNo || null,
+          },
+        })
+      );
+
+      Alert.alert("Success", msg);
+
       setPurpose("");
       setShowPurposeMenu(false);
-      setAnchorNow(false); // reset toggle after success
+      setAnchorNow(false);
     } catch (e) {
       Alert.alert("Submit failed", String(e || "Unknown error"));
     }
   };
 
-  // Liveness cancelled / failed
   const handleLivenessClose = () => {
     setShowLiveness(false);
   };
 
-  // When running liveness, show only the FaceVerifier full-screen
   if (showLiveness) {
     return (
       <FaceVerifier
@@ -119,7 +148,19 @@ export default function RequestVC() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
+        {/* Back to Home (upper left) */}
+        <View style={styles.headerRow}>
+          <Pressable
+            style={styles.backBtn}
+            onPress={() => router.back()}
+            hitSlop={10}
+          >
+            <Ionicons name="chevron-back" size={20} color="#111827" />
+            <Text style={styles.backText}>Back to Home</Text>
+          </Pressable>
+        </View>
+
+        {/* Header title */}
         <Text style={styles.title}>Request Credential</Text>
 
         {/* Account status card */}
@@ -153,14 +194,18 @@ export default function RequestVC() {
             selectedValue={type}
             onValueChange={(v) => setType(v)}
             style={styles.picker}
-            dropdownIconColor="#111827"
+            dropdownIconColor="#000000ff"   // icon white
           >
             <Picker.Item
               label="Transcript of Records (TOR)"
               value="TOR"
-              color="#111827"
+              color="#ffffff"              // item text white
             />
-            <Picker.Item label="Diploma" value="DIPLOMA" color="#111827" />
+            <Picker.Item
+              label="Diploma"
+              value="DIPLOMA"
+              color="#ffffff"              // item text white
+            />
           </Picker>
         </View>
 
@@ -222,8 +267,8 @@ export default function RequestVC() {
             <View style={{ flex: 1 }}>
               <Text style={styles.anchorLabel}>Anchor now</Text>
               <Text style={styles.anchorHint}>
-                When enabled, your request will create a draft that is marked for
-                blockchain anchoring once payment is completed.
+                When enabled, your request will create a draft that is marked
+                for blockchain anchoring once payment is completed.
               </Text>
             </View>
           </Pressable>
@@ -255,7 +300,30 @@ export default function RequestVC() {
 
 const styles = StyleSheet.create({
   container: { flexGrow: 1, padding: s(20) },
-  title: { fontSize: s(22), fontWeight: "700", marginBottom: vs(14) },
+
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: vs(8),
+    marginTop: vs(25),
+  },
+  backBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  backText: {
+    marginLeft: s(4),
+    fontSize: s(12),
+    color: "#111827",
+    fontWeight: "500",
+  },
+
+  title: {
+    fontSize: s(22),
+    fontWeight: "700",
+    marginBottom: vs(14),
+    marginTop: vs(10),
+  },
 
   statusCard: {
     flexDirection: "row",
@@ -291,14 +359,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: LINE,
     borderRadius: s(10),
-    backgroundColor: "#fff",
+    backgroundColor: "#ffffffff", // 🔥 dark background so white text pops
     marginBottom: vs(8),
     overflow: "hidden",
   },
   picker: {
-    height: vs(44),
+    height: vs(55),
     width: "100%",
-    color: "#111827",
+    color: "#000000ff", // 🔥 makes picker text white
   },
 
   lineInput: {
@@ -341,7 +409,6 @@ const styles = StyleSheet.create({
   },
   dropdownText: { fontSize: s(14), color: "#111827", flexShrink: 1 },
 
-  // Anchor now styles
   anchorRow: {
     marginTop: vs(16),
   },

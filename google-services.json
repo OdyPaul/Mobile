@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "795852269874",
+    "project_id": "cred-pocket",
+    "storage_bucket": "cred-pocket.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:795852269874:android:cb99a4286a6e200a028f2b",
+        "android_client_info": {
+          "package_name": "com.psau.credpocket"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDwEYF0y1rqAyi1rez55ueXurvOOBWKxIM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

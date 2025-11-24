@@ -1,30 +1,29 @@
+// hooks/useSignOut.js
 import { useCallback } from "react";
 import { useRouter } from "expo-router";
 import { useDispatch } from "react-redux";
 import Toast from "react-native-toast-message";
 import { logout } from "../features/auth/authSlice";
-import useWalletConnector from "./useWalletConnector";
+import verificationService from "../features/verification/verificationService";
 
 export default function useSignOut() {
   const router = useRouter();
   const dispatch = useDispatch();
-  const { isConnected, disconnectAndClear } = useWalletConnector();
 
   const signOut = useCallback(async () => {
     try {
-      // Disconnect WalletConnect (provider + DID + local walletSession)
-      if (isConnected) {
-        await disconnectAndClear();
-      }
-
-      // Clear user/token from storage via redux thunk/service
+      // Clear auth via Redux
       await dispatch(logout());
+
+      // Also clear any cached verification data
+      await verificationService.clearVerificationCache();
 
       Toast.show({
         type: "success",
         text1: "Logged Out",
         text2: "You have been logged out successfully.",
       });
+
       router.replace("/(auth)/login");
     } catch (e) {
       Toast.show({
@@ -33,7 +32,7 @@ export default function useSignOut() {
         text2: e?.message || "Please try again.",
       });
     }
-  }, [isConnected, disconnectAndClear, dispatch, router]);
+  }, [dispatch, router]);
 
   return { signOut };
 }

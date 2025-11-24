@@ -5,6 +5,7 @@ import VerificationSessionReducer from "../features/session/verificationSessionS
 import consentModal  from "./slices/consentModalSlice"
 import vcRequestReducer from "../features/vc/vcRequestSlice"
 import notifReducer from "../features/notif/notifSlice"
+import consentReducer from "../features/consent/consentSlice"
 export const store = configureStore({
   reducer: {
     auth: authReducer,
@@ -13,6 +14,7 @@ export const store = configureStore({
       consentModal: consentModal,   
       vcRequest: vcRequestReducer,
       notif:notifReducer,
+      consent:consentReducer,
   },
 });
 

@@ -8,23 +8,25 @@ export default function useVerificationPending() {
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
-    let mounted = true;
+    let isMounted = true;
 
     const checkPending = async () => {
       try {
+        // This now uses the cached result if available
         const res = await verificationService.getMyVerificationRequests();
         const list = normalizeVerificationList(res);
-        if (mounted) setPending(hasPending(list));
-      } catch (err) {
-        // Silent fail — optional: console.warn("Verification check failed", err);
+        if (isMounted) setPending(hasPending(list));
+      } catch {
+        // Silent fail is OK; you can optionally log here
+        if (isMounted) setPending(false);
       } finally {
-        if (mounted) setChecking(false);
+        if (isMounted) setChecking(false);
       }
     };
 
     checkPending();
     return () => {
-      mounted = false;
+      isMounted = false;
     };
   }, []);
 

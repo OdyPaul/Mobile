@@ -15,7 +15,7 @@ export default function Index() {
     return () => clearTimeout(timer);
   }, [rootNavigation?.key]);
 
-  // show a simple loading while waiting
+
   return (
     <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
       <ActivityIndicator size="large" color="#000" />

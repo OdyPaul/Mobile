@@ -129,7 +129,9 @@ export default function Login() {
         // 🔔 Preload activity items so Activity has data instantly
         dispatch(refreshNotifications());
 
-          const res = await verificationService.getMyVerificationRequests();
+          const res = await verificationService.getMyVerificationRequests({
+            forceRefresh: true,
+          });
           const list = normalizeVerificationList(res);
           const pending = hasPending(list);
           const isUnverified = String(user?.verified ?? "unverified").toLowerCase() === "unverified";

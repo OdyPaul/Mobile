@@ -6,6 +6,8 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Animated,
+  Easing,
 } from "react-native";
 import Toast from "react-native-toast-message";
 import {
@@ -26,7 +28,7 @@ import { Camera as FaceCamera } from "react-native-vision-camera-face-detector";
 /* =================== CONFIG =================== */
 
 const REQUIRED_SUCCESSES = 3; // need 3
-const MAX_ATTEMPTS = 5;       // out of 5 tries
+const MAX_ATTEMPTS = 5; // out of 5 tries
 
 // Blink
 const OPEN_T = 0.6;
@@ -43,7 +45,13 @@ const ACTION_LABEL = {
   LOOK_UP: "Look UP",
   LOOK_DOWN: "Look DOWN",
 };
-const ACTION_CONSEC = 3;       // consecutive frames to count as success
+const ACTION_INSTRUCTION = {
+  TURN_LEFT: "Turn your head to the LEFT slowly…",
+  TURN_RIGHT: "Turn your head to the RIGHT slowly…",
+  LOOK_UP: "Slowly look UP with your head…",
+  LOOK_DOWN: "Slowly look DOWN with your head…",
+};
+const ACTION_CONSEC = 3; // consecutive frames to count as success
 const ACTION_TIMEOUT_MS = 5000; // per movement (try)
 const YAW_DEG = 15;
 const PITCH_DEG = 12;
@@ -70,6 +78,88 @@ const getAngles = (f) => {
   return { yaw: yaw ?? 0, pitch: pitch ?? 0, roll: roll ?? 0 };
 };
 
+/* =========== Direction arrow animation component =========== */
+
+function DirectionArrow({ target }) {
+  const translate = useRef(new Animated.Value(0)).current;
+  const loopRef = useRef(null);
+
+  useEffect(() => {
+    if (!target) {
+      if (loopRef.current) {
+        loopRef.current.stop();
+        loopRef.current = null;
+      }
+      translate.setValue(0);
+      return;
+    }
+
+    const isHorizontal = target === "TURN_LEFT" || target === "TURN_RIGHT";
+    const distance = 18;
+
+    const toValue = isHorizontal
+      ? target === "TURN_LEFT"
+        ? -distance
+        : distance
+      : target === "LOOK_UP"
+      ? -distance
+      : distance;
+
+    translate.setValue(0);
+
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(translate, {
+          toValue,
+          duration: 600,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(translate, {
+          toValue: 0,
+          duration: 600,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    loopRef.current = animation;
+    animation.start();
+
+    return () => {
+      if (loopRef.current) {
+        loopRef.current.stop();
+        loopRef.current = null;
+      }
+    };
+  }, [target, translate]);
+
+  if (!target) return null;
+
+  const isHorizontal = target === "TURN_LEFT" || target === "TURN_RIGHT";
+  const arrowSymbol =
+    target === "TURN_LEFT"
+      ? "←"
+      : target === "TURN_RIGHT"
+      ? "→"
+      : target === "LOOK_UP"
+      ? "↑"
+      : "↓";
+
+  const transformStyle = isHorizontal
+    ? { transform: [{ translateX: translate }] }
+    : { transform: [{ translateY: translate }] };
+
+  return (
+    <View style={styles.arrowContainer}>
+      <Animated.View style={[styles.arrowBubble, transformStyle]}>
+        <Text style={styles.arrowText}>{arrowSymbol}</Text>
+      </Animated.View>
+    </View>
+  );
+}
+
 export default function FaceVerifier({ onClose, onPassed }) {
   const device = useCameraDevice("front");
   const { hasPermission, requestPermission } = useCameraPermission();
@@ -82,9 +172,7 @@ export default function FaceVerifier({ onClose, onPassed }) {
   const [successCount, setSuccessCount] = useState(0);
   const [attemptCount, setAttemptCount] = useState(0);
 
-  // Debug / UI
-  const [debugOpen, setDebugOpen] = useState(null);
-  const [debugPose, setDebugPose] = useState(null);
+  // Current action target for UI
   const [actionTarget, setActionTarget] = useState(null);
 
   // Blink FSM
@@ -143,8 +231,6 @@ export default function FaceVerifier({ onClose, onPassed }) {
     countsRef.current = { success: 0, attempts: 0 };
     setSuccessCount(0);
     setAttemptCount(0);
-    setDebugOpen(null);
-    setDebugPose(null);
     setActionTarget(null);
     actionRef.current = {
       active: false,
@@ -197,8 +283,8 @@ export default function FaceVerifier({ onClose, onPassed }) {
     const successes = countsRef.current.success;
     Toast.show({
       type: "info",
-      text1: `Move attempt ${attempts + 1}/${MAX_ATTEMPTS}`,
-      text2: `${ACTION_LABEL[target]} • successes ${successes}/${REQUIRED_SUCCESSES}`,
+      text1: `Head movement ${attempts + 1}/${MAX_ATTEMPTS}`,
+      text2: `${ACTION_LABEL[target]} • ${successes}/${REQUIRED_SUCCESSES} done`,
     });
   };
 
@@ -274,8 +360,6 @@ export default function FaceVerifier({ onClose, onPassed }) {
         resetBlinkFSM();
         setBlinkPassed(false);
       }
-      setDebugOpen(null);
-      setDebugPose(null);
       return;
     }
 
@@ -284,17 +368,7 @@ export default function FaceVerifier({ onClose, onPassed }) {
     const now = Date.now();
     const fsm = fsmRef.current;
 
-    if (open == null) {
-      setDebugOpen("—");
-    } else {
-      setDebugOpen(Number(open.toFixed(2)));
-    }
-
     const angles = getAngles(face);
-    setDebugPose(
-      `yaw ${angles.yaw.toFixed(1)}° • pitch ${angles.pitch.toFixed(1)}°`
-    );
-
     fsm.lastSeen = now;
 
     // --- BLINK PHASE ---
@@ -342,7 +416,6 @@ export default function FaceVerifier({ onClose, onPassed }) {
 
     // If no action active yet, start one
     if (!act.active) {
-      // Might have been reset after failing; ensure we don't start new action if we've already passed
       if (countsRef.current.success >= REQUIRED_SUCCESSES) return;
       if (countsRef.current.attempts >= MAX_ATTEMPTS) return;
       startAction(face, now);
@@ -356,9 +429,7 @@ export default function FaceVerifier({ onClose, onPassed }) {
     }
 
     // Check if movement satisfied
-    if (
-      actionSatisfied(act.target, act.baseline, angles)
-    ) {
+    if (actionSatisfied(act.target, act.baseline, angles)) {
       act.consec += 1;
       if (act.consec >= ACTION_CONSEC) {
         finishAttempt(true, face);
@@ -406,6 +477,25 @@ export default function FaceVerifier({ onClose, onPassed }) {
     minFaceSize: 0.15,
   };
 
+  const hasMultipleFaces = faces.length > 1;
+  const noFace = faces.length === 0;
+
+  let instructionText = "";
+  if (noFace) {
+    instructionText = "Put your face on the camera";
+  } else if (hasMultipleFaces) {
+    instructionText = "Only one face should be in the frame";
+  } else if (facePresent && !blinkPassed) {
+    instructionText = "Blink your eyes to begin 👁️";
+  } else if (facePresent && blinkPassed && !doneRef.current) {
+    instructionText =
+      actionTarget && ACTION_INSTRUCTION[actionTarget]
+        ? ACTION_INSTRUCTION[actionTarget]
+        : "Get ready to move your head when prompted…";
+  } else if (doneRef.current) {
+    instructionText = "Liveness check complete";
+  }
+
   return (
     <View style={styles.container}>
       <View style={{ flex: 1, borderRadius: 10, overflow: "hidden" }}>
@@ -426,40 +516,24 @@ export default function FaceVerifier({ onClose, onPassed }) {
           </TouchableOpacity>
         </View>
 
-        {/* Top overlay instructions */}
-        <View style={styles.overlayTop}>
-          {faces.length === 0 && (
-            <Text style={styles.overlayText}>Show your face in the frame</Text>
-          )}
-          {faces.length > 1 && (
-            <Text style={styles.overlayText}>Only one person please</Text>
-          )}
-          {facePresent && !blinkPassed && (
-            <Text style={styles.overlayText}>Blink to verify liveness</Text>
-          )}
-          {facePresent && blinkPassed && !doneRef.current && (
-            <Text style={styles.overlayText}>
-              {actionTarget
-                ? `${ACTION_LABEL[actionTarget]} • attempts ${attemptCount}/${MAX_ATTEMPTS} • successes ${successCount}/${REQUIRED_SUCCESSES}`
-                : "Get ready for movement…"}
-            </Text>
-          )}
-          {doneRef.current && (
-            <Text style={styles.overlayText}>Liveness check complete</Text>
-          )}
+        {/* Top overlay instructions (simple, no debug numbers) */}
+        {instructionText ? (
+          <View style={styles.overlayTop}>
+            <Text style={styles.overlayText}>{instructionText}</Text>
+            {/* Optional: progress line, small & subtle */}
+            {blinkPassed && !doneRef.current && (
+              <Text style={styles.progressText}>
+                Movements {attemptCount}/{MAX_ATTEMPTS} • Success {successCount}
+                /{REQUIRED_SUCCESSES}
+              </Text>
+            )}
+          </View>
+        ) : null}
 
-          {debugOpen !== null && (
-            <Text style={styles.debugText}>Eye: {String(debugOpen)}</Text>
-          )}
-          {debugPose && (
-            <Text style={styles.debugText}>{String(debugPose)}</Text>
-          )}
-        </View>
-
-        {/* Faces counter (tiny debug) */}
-        <View style={styles.overlayCounter}>
-          <Text style={styles.counterText}>Faces: {faces.length}</Text>
-        </View>
+        {/* Animated direction arrow in the center during head movements */}
+        {facePresent && blinkPassed && !doneRef.current && (
+          <DirectionArrow target={actionTarget} />
+        )}
       </View>
 
       <Toast />
@@ -492,25 +566,24 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 16,
     alignSelf: "center",
-    backgroundColor: "rgba(0,0,0,0.45)",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
     alignItems: "center",
   },
-  overlayText: { color: "#fff", fontWeight: "700", textAlign: "center" },
-  debugText: { color: "#ddd", fontSize: 11, marginTop: 2 },
-
-  overlayCounter: {
-    position: "absolute",
-    top: 16,
-    right: 16,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 10,
+  overlayText: {
+    color: "#fff",
+    fontWeight: "700",
+    textAlign: "center",
+    fontSize: 15,
   },
-  counterText: { color: "#fff", fontWeight: "600", fontSize: 12 },
+  progressText: {
+    marginTop: 4,
+    color: "#ddd",
+    fontSize: 11,
+    textAlign: "center",
+  },
 
   backWrap: { position: "absolute", bottom: 28, left: 20 },
   backBtn: {
@@ -520,4 +593,24 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.45)",
   },
   backText: { color: "#fff", fontWeight: "700" },
+
+  arrowContainer: {
+    position: "absolute",
+    top: "40%",
+    alignSelf: "center",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  arrowBubble: {
+    backgroundColor: "rgba(0,0,0,0.55)",
+    paddingHorizontal: 24,
+    paddingVertical: 18,
+    borderRadius: 80,
+  },
+  arrowText: {
+    color: "#fff",
+    fontSize: 40,
+    fontWeight: "700",
+    textAlign: "center",
+  },
 });

@@ -38,10 +38,13 @@ export default function useVerificationRouting(router, user) {
         return;
       }
 
-      // Check server-side requests first (pending takes priority)
-      const res = await verificationService.getMyVerificationRequests();
+      // Always refresh from server when user explicitly taps the button
+      const res = await verificationService.getMyVerificationRequests({
+        forceRefresh: true,
+      });
       const list = normalizeVerificationList(res);
       const pending = hasPending(list);
+
       if (pending) {
         router.replace("/(setup)/pendingVerification");
         return;
@@ -72,7 +75,6 @@ export default function useVerificationRouting(router, user) {
       // ✅ Verified → go straight to profile
       setLoading(false);
       router.push("/subs/settings/profile");
-      return;
     } catch (err) {
       Toast.show({
         type: "error",

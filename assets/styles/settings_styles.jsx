@@ -69,6 +69,7 @@ export const settings_styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 4,
     elevation: 2,
+    marginTop:verticalScale(15),
   },
   menuItem: {
     flexDirection: "row",
@@ -93,7 +94,7 @@ export const settings_styles = StyleSheet.create({
     backgroundColor: "#F3F4F6",
     borderRadius: moderateScale(20),
     paddingVertical: verticalScale(15),
-    marginTop: verticalScale(10),
+    marginTop: verticalScale(25),
     shadowColor: "#000",
     shadowOpacity: 0.02,
     shadowOffset: { width: 0, height: 2 },

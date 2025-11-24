@@ -11,8 +11,9 @@ import { toastConfig } from "../assets/components/toast";
 import { Modal, View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from "react-native";
 import axios from "axios";
 
-import { WalletConnectModal } from "@walletconnect/modal-react-native";
-import { PROJECT_ID, PROVIDER_METADATA } from "../hooks/useWalletConnector";
+// ✅ WalletConnectModal + PROJECT_ID / PROVIDER_METADATA import removed
+// import { WalletConnectModal } from "@walletconnect/modal-react-native";
+// import { PROJECT_ID, PROVIDER_METADATA } from "../hooks/useWalletConnector";
 
 import { useWallet } from "../assets/store/walletStore";
 import { presentSession, selectSessionId } from "../features/session/verificationSessionSlice";
@@ -81,7 +82,13 @@ function SessionWatcher() {
         const vcHint = coalesce(sessionHint, persistedHint);
 
         // Only open once when ready and either we know the VC or we at least have a wallet VC to attempt
-        if (ready && sig !== lastSig && !visible && !openedFor.current[sessionId] && (vcHint || (Array.isArray(vcs) && vcs.length > 0))) {
+        if (
+          ready &&
+          sig !== lastSig &&
+          !visible &&
+          !openedFor.current[sessionId] &&
+          (vcHint || (Array.isArray(vcs) && vcs.length > 0))
+        ) {
           openedFor.current[sessionId] = true;
           dispatch(openVerificationModal({ sessionId, credentialId: vcHint || undefined }));
         }
@@ -213,8 +220,8 @@ function GlobalVerificationModal() {
       await dispatch(
         presentSession({
           sessionId: String(sessionId),
-          vc: vc || null,                        // thunk will try payload → derived id
-          credential_id: fallbackId || undefined // explicit fallback if payload/derivation not available
+          vc: vc || null, // thunk will try payload → derived id
+          credential_id: fallbackId || undefined, // explicit fallback if payload/derivation not available
         })
       ).unwrap();
 
@@ -228,31 +235,30 @@ function GlobalVerificationModal() {
   };
 
   // inside GlobalVerificationModal in app/_layout.jsx
-const deny = async () => {
-  if (!sessionId) {
-    onClose();
-    return;
-  }
-  setApproving(true);
-  try {
-    await axios.post(
-      `${apiBase}/verification/session/${encodeURIComponent(sessionId)}/present`,
-      { decision: 'deny' }, // nothing else
-      { headers: { 'Content-Type': 'application/json' } }
-    );
-    Toast.show({ type: "success", text1: "Request denied" });
-    dispatch(dismissSessionOnce(sessionId));
-    onClose();
-  } catch (e) {
-    const msg = e?.response?.data?.message || e?.message || "Deny failed";
-    Toast.show({ type: "error", text1: "Failed to deny", text2: String(msg) });
-    dispatch(dismissSessionOnce(sessionId));
-    onClose();
-  } finally {
-    setApproving(false);
-  }
-};
-
+  const deny = async () => {
+    if (!sessionId) {
+      onClose();
+      return;
+    }
+    setApproving(true);
+    try {
+      await axios.post(
+        `${apiBase}/verification/session/${encodeURIComponent(sessionId)}/present`,
+        { decision: "deny" }, // nothing else
+        { headers: { "Content-Type": "application/json" } }
+      );
+      Toast.show({ type: "success", text1: "Request denied" });
+      dispatch(dismissSessionOnce(sessionId));
+      onClose();
+    } catch (e) {
+      const msg = e?.response?.data?.message || e?.message || "Deny failed";
+      Toast.show({ type: "error", text1: "Failed to deny", text2: String(msg) });
+      dispatch(dismissSessionOnce(sessionId));
+      onClose();
+    } finally {
+      setApproving(false);
+    }
+  };
 
   const org = sess?.employer?.org || "—";
   const contact = sess?.employer?.contact || "—";
@@ -301,8 +307,16 @@ const deny = async () => {
                 <TouchableOpacity style={[stylesModal.btn, stylesModal.btnGhost]} onPress={deny} disabled={approving}>
                   {approving ? <ActivityIndicator /> : <Text style={stylesModal.btnGhostText}>Deny</Text>}
                 </TouchableOpacity>
-                <TouchableOpacity style={[stylesModal.btn, stylesModal.btnDark]} onPress={approve} disabled={approving}>
-                  {approving ? <ActivityIndicator color="#fff" /> : <Text style={stylesModal.btnDarkText}>Allow</Text>}
+                <TouchableOpacity
+                  style={[stylesModal.btn, stylesModal.btnDark]}
+                  onPress={approve}
+                  disabled={approving}
+                >
+                  {approving ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={stylesModal.btnDarkText}>Allow</Text>
+                  )}
                 </TouchableOpacity>
               </View>
             </>
@@ -315,8 +329,22 @@ const deny = async () => {
 
 /* ============================== Styles ============================== */
 const stylesModal = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,.45)", alignItems: "center", justifyContent: "center", padding: 16 },
-  card: { width: "100%", maxWidth: 420, backgroundColor: "#fff", borderRadius: 14, padding: 16, borderColor: "#e5e7eb", borderWidth: 1 },
+  backdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,.45)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+  },
+  card: {
+    width: "100%",
+    maxWidth: 420,
+    backgroundColor: "#fff",
+    borderRadius: 14,
+    padding: 16,
+    borderColor: "#e5e7eb",
+    borderWidth: 1,
+  },
   title: { fontSize: 18, fontWeight: "700", color: "#0f172a", marginBottom: 8 },
   row: { marginTop: 4 },
   label: { color: "#64748b", fontSize: 12 },
@@ -354,7 +382,7 @@ export default function RootLayout() {
         <SessionWatcher />
         <GlobalVerificationModal />
 
-        <WalletConnectModal projectId={PROJECT_ID} providerMetadata={PROVIDER_METADATA} />
+        {/* WalletConnectModal removed so external wallet connect UI doesn't show */}
         <Toast config={toastConfig} />
       </SafeAreaProvider>
     </Provider>

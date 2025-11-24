@@ -147,18 +147,35 @@ function makeFromVerificationRequests(list) {
 }
 
 function makeFromVcRequests(list) {
-  return (list || []).map((r) =>
-    normItem({
+  return (list || []).map((r) => {
+    // 🔍 Be robust to different backend field spellings
+    const txRaw =
+      r.paymentTxNo ??
+      r.payment_tx_no ??
+      (r.meta && (r.meta.paymentTxNo || r.meta.payment_tx_no)) ??
+      null;
+    const tx = txRaw ? String(txRaw) : null;
+
+    return normItem({
       id: `vcreq-${r._id}`,
       ts: r.updatedAt || r.createdAt,
       type: "vc_request",
       title: `${String(r.type || "VC")} ${String(r.status || "pending")}`,
-      desc: r.studentFullName || r.studentNumber || "",
+      // If we have a TX, always make it the desc so Activity can show it
+      desc: tx
+        ? `Payment TX: ${tx}`
+        : r.studentFullName || r.studentNumber || "",
       status: String(r.status || "pending"),
       icon: "document-text-outline",
-      meta: { requestId: r._id, type: r.type, purpose: r.purpose },
-    })
-  );
+      meta: {
+        requestId: r._id,
+        type: r.type,
+        purpose: r.purpose,
+        status: r.status || "pending",
+        paymentTxNo: tx, // 👈 always normalized here
+      },
+    });
+  });
 }
 
 /* -------------------- local-derived notifications (wallet) ------------------ */
