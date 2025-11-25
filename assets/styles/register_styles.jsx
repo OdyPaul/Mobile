@@ -59,7 +59,7 @@ export const register_styles = StyleSheet.create({
     borderRadius: 10,
     marginBottom: 15,
     paddingHorizontal: 10,
-    backgroundColor: "#f9fafb",
+   
   },
   icon: {
     marginRight: 8,

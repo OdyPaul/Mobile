@@ -247,6 +247,21 @@ export default function Login() {
             Sign Up
           </Text>
         </Text>
+      <TouchableOpacity
+          onPress={() => router.push("/reset_password")}
+          activeOpacity={0.7}
+          style={{ marginTop: vs(10) }}
+        >
+          <Text
+            style={[
+              login_styles.signUpText,
+              { textAlign: "center" }, // optional center
+            ]}
+          >
+            Forgot password
+          </Text>
+        </TouchableOpacity>
+
       </View>
     </View>
   );

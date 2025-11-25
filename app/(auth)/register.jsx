@@ -60,7 +60,7 @@ export default function Register() {
 
         {/* Name */}
         <View style={{ width: "100%" }}>
-          <Text style={register_styles.inputLabel}>Full Name</Text>
+          <Text style={register_styles.inputLabel}>Username</Text>
           <View style={register_styles.inputContainer}>
             <Ionicons
               name="person-outline"
@@ -69,7 +69,7 @@ export default function Register() {
               style={register_styles.icon}
             />
             <TextInput
-              placeholder="Full Name"
+              placeholder="Username"
               value={fullName}
               onChangeText={setFullName}
               style={register_styles.input}

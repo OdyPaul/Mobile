@@ -2,7 +2,6 @@
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-
 const API_URL = (process.env.EXPO_PUBLIC_API_URL || "").replace(/\/+$/, "");
 
 // -----------------------------------------------------------------------------
@@ -35,7 +34,6 @@ const register = async (userData) => {
 // LOGIN
 // -----------------------------------------------------------------------------
 const login = async (userData) => {
-
   const { data } = await axios.post(`${API_URL}/api/mobile/users/login`, userData);
   console.log("Login API Response:", JSON.stringify(data, null, 2));
   const rawUser = data?.user ?? data;
@@ -53,15 +51,44 @@ const logout = async () => {
 };
 
 // -----------------------------------------------------------------------------
-// OTP
+// OTP (registration email verification)
 // -----------------------------------------------------------------------------
 const requestEmailOtp = async (email) => {
   const { data } = await axios.post(`${API_URL}/api/mobile/otp/request`, { email });
   return data; // { success: true }
 };
+
 const verifyEmailOtp = async (email, code) => {
-  const { data } = await axios.post(`${API_URL}/api/mobile/otp/verify`, { email, code });
+  const { data } = await axios.post(`${API_URL}/api/mobile/otp/verify`, {
+    email,
+    code,
+  });
   return data; // { success: true, otpSession }
+};
+
+// -----------------------------------------------------------------------------
+// PASSWORD RESET OTP
+// -----------------------------------------------------------------------------
+const requestPasswordResetOtp = async (email) => {
+  const { data } = await axios.post(`${API_URL}/api/password/forgot`, { email });
+  return data; // { success: true, debugCode? }
+};
+
+const verifyPasswordResetOtp = async (email, code) => {
+  const { data } = await axios.post(`${API_URL}/api/password/verify`, {
+    email,
+    code,
+  });
+  return data; // { success: true, resetSession }
+};
+
+const resetPassword = async ({ email, resetSession, newPassword }) => {
+  const { data } = await axios.post(`${API_URL}/api/password/reset`, {
+    email,
+    resetSession,
+    newPassword,
+  });
+  return data; // { success: true }
 };
 
 export default {
@@ -70,4 +97,7 @@ export default {
   logout,
   requestEmailOtp,
   verifyEmailOtp,
+  requestPasswordResetOtp,
+  verifyPasswordResetOtp,
+  resetPassword,
 };
